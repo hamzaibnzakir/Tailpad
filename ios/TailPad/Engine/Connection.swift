@@ -137,7 +137,21 @@ final class Connection: ObservableObject {
                                        ("1364780", "Street Fighter 6"), ("1145360", "Hades"), ("252950", "Rocket League")]
         games = ids.map { PCGame(id: "steam:\($0.0)", name: $0.1, source: "Steam",
                                  art: URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\($0.0)/header.jpg")) }
-            + [PCGame(id: "custom:1", name: "Dolphin Emulator", source: "PC", art: nil)]
+            + [PCGame(id: "scan:1", name: "Grand Theft Auto V", source: "PC", art: Self.demoIcon()),
+               PCGame(id: "scan:2", name: "eFootball", source: "PC", art: Self.demoIcon())]
+    }
+
+    /// sample icon for screenshots (a real one comes from the game's .exe on the PC)
+    private static func demoIcon() -> URL? {
+        let r = UIGraphicsImageRenderer(size: CGSize(width: 96, height: 96))
+        let img = r.image { ctx in
+            UIColor(red: 0.13, green: 0.16, blue: 0.21, alpha: 1).setFill()
+            UIBezierPath(roundedRect: CGRect(x: 4, y: 4, width: 88, height: 88), cornerRadius: 20).fill()
+            let a: [NSAttributedString.Key: Any] = [.font: UIFont.systemFont(ofSize: 40, weight: .heavy), .foregroundColor: UIColor(red: 0.22, green: 1, blue: 0.53, alpha: 1)]
+            ("▶" as NSString).draw(at: CGPoint(x: 30, y: 22), withAttributes: a)
+        }
+        guard let png = img.pngData() else { return nil }
+        return URL(string: "data:image/png;base64," + png.base64EncodedString())
     }
 
     // MARK: TCP
@@ -220,7 +234,7 @@ final class Connection: ObservableObject {
                     self.buffer.removeSubrange(self.buffer.startIndex...nl)
                     if let obj = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any] { self.handle(obj) }
                 }
-                if self.buffer.count > 256 * 1024 { self.buffer.removeAll() }
+                if self.buffer.count > 16 * 1024 * 1024 { self.buffer.removeAll() } // game lists with icons can be a few MB
             }
             if done || err != nil {
                 if self.wantConnected { self.fail("PC closed the connection") }

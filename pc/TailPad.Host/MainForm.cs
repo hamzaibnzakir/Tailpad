@@ -31,6 +31,8 @@ sealed class MainForm : Form
     readonly ListView _games = MakeList(("Game", 300), ("From", 90));
     readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Panel, ForeColor = Fg, BorderStyle = BorderStyle.None, Font = new Font("Consolas", 9) };
     bool _quitting;
+    Button _scanButton = null!, _unhide = null!;
+    readonly Label _scanStatus = new() { AutoSize = true, ForeColor = Color.FromArgb(0x8A, 0x92, 0xA6) };
     TabControl _tabs = null!;
     public void SelectTab(int i) => _tabs.SelectedIndex = i;
 
@@ -164,13 +166,18 @@ sealed class MainForm : Form
         gl.Controls.Add(new Label
         {
             AutoSize = true, ForeColor = Dim, MaximumSize = new Size(560, 0),
-            Text = "Steam and Epic games are found automatically. Add anything else (emulators, Xbox app games via their .exe, launchers) here — they show up in the phone's Games tab.",
+            Text = "TailPad finds your games by itself — Steam, Epic, and games installed anywhere on your drives. Missing one? Add its .exe. Wrong one? Select it and Remove.",
         });
         gl.Controls.Add(_games);
         var grow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+        _scanButton = MakeButton("Scan PC for games", (_, _) => StartScan());
+        grow.Controls.Add(_scanButton);
         grow.Controls.Add(MakeButton("Add game…", (_, _) => AddGame()));
         grow.Controls.Add(MakeButton("Remove", (_, _) => RemoveGame()));
-        grow.Controls.Add(MakeButton("Rescan", (_, _) => { _services.Rescan(); RefreshGames(); }));
+        _unhide = MakeButton("Show removed", (_, _) => { _services.UnhideAll(); RefreshGames(); });
+        grow.Controls.Add(_unhide);
+        _scanStatus.Margin = new Padding(4, 12, 0, 0);
+        grow.Controls.Add(_scanStatus);
         gl.Controls.Add(grow);
         games.Controls.Add(gl);
         tabs.TabPages.Add(games);
@@ -262,13 +269,36 @@ sealed class MainForm : Form
         _paired.EndUpdate();
     }
 
-    void RefreshGames()
+    public void RefreshGames()
     {
+        if (InvokeRequired) { BeginInvoke(RefreshGames); return; }
         _games.BeginUpdate();
         _games.Items.Clear();
         foreach (var g in _services.Games())
-            _games.Items.Add(new ListViewItem(new[] { g.Name, g.Source }) { Tag = g });
+            _games.Items.Add(new ListViewItem(new[] { g.Name, g.Source == "PC" ? "On this PC" : g.Source }) { Tag = g });
         _games.EndUpdate();
+        int hidden;
+        lock (_cfg) hidden = _cfg.HiddenGames.Count;
+        _unhide.Visible = hidden > 0;
+        _unhide.Text = $"Show removed ({hidden})";
+        if (_services.Scanning) { _scanStatus.Text = "Scanning your drives…"; _scanButton.Enabled = false; }
+        else
+        {
+            _scanButton.Enabled = true;
+            DateTime last; lock (_cfg) last = _cfg.LastScan;
+            _scanStatus.Text = last == default ? "" : $"{_games.Items.Count} games · last scan {last:g}";
+        }
+    }
+
+    void StartScan()
+    {
+        _scanButton.Enabled = false;
+        _scanStatus.Text = "Scanning your drives… (a minute or two)";
+        Task.Run(() =>
+        {
+            var n = _services.ScanPc();
+            if (!IsDisposed) BeginInvoke(() => { RefreshGames(); AppendLog($"{DateTime.Now:HH:mm:ss}  Scan found {n} games on your drives"); });
+        });
     }
 
     void AddGame()
@@ -284,10 +314,13 @@ sealed class MainForm : Form
     void RemoveGame()
     {
         if (_games.SelectedItems.Count != 1 || _games.SelectedItems[0].Tag is not GameEntry g) return;
-        if (g.Source != "PC") { MessageBox.Show("Steam and Epic games are listed automatically — uninstall them in their launcher to hide them.", "TailPad"); return; }
-        var path = g.Target.Split('\0')[0];
-        lock (_cfg) { _cfg.CustomGames.RemoveAll(c => c.Path == path); _cfg.Save(); }
-        _services.Rescan();
+        if (g.Id.StartsWith("custom:"))
+        {
+            var path = g.Target.Split('\0')[0];
+            lock (_cfg) { _cfg.CustomGames.RemoveAll(c => c.Path == path); _cfg.Save(); }
+            _services.Rescan();
+        }
+        else _services.Hide(g); // found automatically → hide it (and keep it hidden after future scans)
         RefreshGames();
     }
 

@@ -39,7 +39,17 @@ sealed class TrayApp : ApplicationContext, IMainHost
 
         if (!_pads.TryInit()) EnsureDriver(askFirst: true);
         _fg = new ForegroundWatcher((exe, title) => _server.BroadcastForeground(exe, title));
-        Task.Run(_services.Rescan);
+        Task.Run(() =>
+        {
+            _services.Rescan();
+            // look for games on the drives the first time, then every few days in the background
+            DateTime last; lock (_cfg) last = _cfg.LastScan;
+            if (DateTime.Now - last > TimeSpan.FromDays(3))
+            {
+                var n = _services.ScanPc();
+                if (n >= 0) { AddLog($"Scan found {n} games on your drives"); _form?.RefreshGames(); }
+            }
+        });
 
         if (!startHidden || !_pads.TryInit()) ShowWindow();
         else Balloon($"TailPad running — pairing code {_cfg.PairingCode}");

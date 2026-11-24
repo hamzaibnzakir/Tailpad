@@ -18,6 +18,12 @@ public sealed class CustomGame
     public string Args { get; set; } = "";
 }
 
+public sealed class ScannedGame
+{
+    public string Name { get; set; } = "";
+    public string Path { get; set; } = "";
+}
+
 public sealed class Config
 {
     public int ControlPort { get; set; } = 47800;
@@ -30,6 +36,11 @@ public sealed class Config
     public string PairingCode { get; set; } = NewCode();
     public List<PairedDevice> Devices { get; set; } = new();
     public List<CustomGame> CustomGames { get; set; } = new();
+    /// <summary>games found by scanning the PC's drives</summary>
+    public List<ScannedGame> ScannedGames { get; set; } = new();
+    public DateTime LastScan { get; set; }
+    /// <summary>game ids the user removed from the list</summary>
+    public List<string> HiddenGames { get; set; } = new();
 
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
     static readonly object Gate = new();

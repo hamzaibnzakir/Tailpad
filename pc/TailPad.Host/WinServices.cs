@@ -34,11 +34,136 @@ public sealed class WinServices : IHostServices
     {
         lock (_gate)
         {
-            List<CustomGame> custom;
-            lock (_cfg) custom = _cfg.CustomGames.ToList();
-            _games = GameLibrary.Scan(SteamRoot(), EpicManifests(), custom);
+            List<CustomGame> custom; List<ScannedGame> scanned; HashSet<string> hidden;
+            lock (_cfg)
+            {
+                custom = _cfg.CustomGames.ToList();
+                scanned = _cfg.ScannedGames.ToList();
+                hidden = new HashSet<string>(_cfg.HiddenGames);
+            }
+            _games = GameLibrary.Scan(SteamRoot(), EpicManifests(), custom, scanned, hidden)
+                .Select(g => g.Art == null && g.Source == "PC" ? g with { Art = IconFor(g.Target.Split('\0')[0]) } : g)
+                .ToList();
             _scanned = DateTime.UtcNow;
         }
+    }
+
+    // ---- whole-PC game scan ----
+
+    public bool Scanning { get; private set; }
+
+    /// <summary>Looks through every local drive for games. Safe to call from a background thread.</summary>
+    public int ScanPc(CancellationToken ct = default)
+    {
+        if (Scanning) return -1;
+        Scanning = true;
+        try
+        {
+            var roots = DriveInfo.GetDrives()
+                .Where(d => d.IsReady && d.DriveType == DriveType.Fixed)
+                .Select(d => d.RootDirectory.FullName).ToList();
+
+            var exclude = new List<string>();
+            var steam = SteamRoot();
+            if (steam != null) exclude.AddRange(GameLibrary.SteamLibraries(steam).Select(l => Path.Combine(l, "steamapps")));
+            exclude.AddRange(GameLibrary.EpicInstallFolders(EpicManifests()));
+
+            var found = GameScanner.Scan(roots, new GameScanner.Options
+            {
+                InstalledNames = InstalledPrograms(),
+                ExcludeFolders = exclude,
+            }, ct);
+
+            lock (_cfg)
+            {
+                _cfg.ScannedGames = found.Select(f => new ScannedGame { Name = f.Name, Path = f.Exe }).ToList();
+                _cfg.LastScan = DateTime.Now;
+                _cfg.Save();
+            }
+            Rescan();
+            return found.Count;
+        }
+        finally { Scanning = false; }
+    }
+
+    /// <summary>Install folder → name, from Windows' "installed apps" list (gives repacks their proper names).</summary>
+    static Dictionary<string, string> InstalledPrograms()
+    {
+        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        void Read(RegistryKey hive, string path)
+        {
+            try
+            {
+                using var root = hive.OpenSubKey(path);
+                if (root == null) return;
+                foreach (var sub in root.GetSubKeyNames())
+                {
+                    using var k = root.OpenSubKey(sub);
+                    if (k == null) continue;
+                    var name = k.GetValue("DisplayName") as string;
+                    if (string.IsNullOrWhiteSpace(name)) continue;
+                    if (k.GetValue("SystemComponent") is int sc && sc == 1) continue;
+                    var loc = k.GetValue("InstallLocation") as string;
+                    if (string.IsNullOrWhiteSpace(loc) && k.GetValue("DisplayIcon") is string icon)
+                    {
+                        icon = icon.Split(',')[0].Trim('"', ' ');
+                        if (icon.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) loc = Path.GetDirectoryName(icon);
+                    }
+                    if (string.IsNullOrWhiteSpace(loc)) continue;
+                    loc = loc.Trim('"', ' ').TrimEnd('\\', '/');
+                    map.TryAdd(loc, name);
+                }
+            }
+            catch { }
+        }
+        const string U = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";
+        Read(Registry.LocalMachine, U);
+        Read(Registry.LocalMachine, @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall");
+        Read(Registry.CurrentUser, U);
+        return map;
+    }
+
+    public void Hide(GameEntry g)
+    {
+        lock (_cfg)
+        {
+            if (!_cfg.HiddenGames.Contains(g.Id)) _cfg.HiddenGames.Add(g.Id);
+            _cfg.Save();
+        }
+        Rescan();
+    }
+
+    public void UnhideAll()
+    {
+        lock (_cfg) { _cfg.HiddenGames.Clear(); _cfg.Save(); }
+        Rescan();
+    }
+
+    // ---- game icons for the phone (small PNG as a data: URL) ----
+
+    readonly Dictionary<string, string?> _icons = new(StringComparer.OrdinalIgnoreCase);
+
+    string? IconFor(string exe)
+    {
+        if (_icons.TryGetValue(exe, out var cached)) return cached;
+        string? url = null;
+        try
+        {
+            if (File.Exists(exe))
+            {
+                using var icon = Icon.ExtractIcon(exe, 0, 96) ?? Icon.ExtractAssociatedIcon(exe);
+                if (icon != null)
+                {
+                    using var bmp = icon.ToBitmap();
+                    using var ms = new MemoryStream();
+                    bmp.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
+                    url = "data:image/png;base64," + Convert.ToBase64String(ms.ToArray());
+                }
+            }
+        }
+        catch { }
+        _icons[exe] = url;
+        return url;
     }
 
     static string? SteamRoot()

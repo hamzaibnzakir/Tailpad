@@ -186,7 +186,12 @@ struct GameTile: View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack {
                 LinearGradient(colors: [Theme.panel, Theme.edge], startPoint: .topLeading, endPoint: .bottomTrailing)
-                if let art = game.art {
+                if let art = game.art, art.scheme == "data", let img = Self.decode(art) {
+                    // icon pulled from the game's .exe on the PC
+                    Image(uiImage: img).resizable().interpolation(.high).scaledToFit()
+                        .frame(width: 58, height: 58)
+                        .shadow(color: .black.opacity(0.5), radius: 8, y: 4)
+                } else if let art = game.art {
                     AsyncImage(url: art) { img in img.resizable().scaledToFill() } placeholder: { Color.clear }
                 } else {
                     Text(String(game.name.prefix(1))).font(.system(size: 36, weight: .heavy)).foregroundColor(Theme.dim)
@@ -197,13 +202,24 @@ struct GameTile: View {
             HStack {
                 Text(game.name).font(.subheadline.weight(.semibold)).lineLimit(1)
                 Spacer()
-                Text(game.source).font(.caption2).foregroundColor(Theme.dim)
+                Text(game.source == "PC" ? "This PC" : game.source).font(.caption2).foregroundColor(Theme.dim)
             }
             .padding(10)
         }
         .background(Theme.panel)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Theme.edge))
+    }
+
+    private static var cache: [String: UIImage] = [:]
+
+    static func decode(_ url: URL) -> UIImage? {
+        let s = url.absoluteString
+        if let hit = cache[s] { return hit }
+        guard let comma = s.firstIndex(of: ","), let data = Data(base64Encoded: String(s[s.index(after: comma)...])),
+              let img = UIImage(data: data) else { return nil }
+        cache[s] = img
+        return img
     }
 }
 

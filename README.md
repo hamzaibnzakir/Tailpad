@@ -8,7 +8,7 @@ Turn your iPhone into a game controller for your Windows PC — over Tailscale, 
 - **Smart buttons.** Drag-out (hold to aim, slide out to fire), stick-edge actions (push to the edge to sprint), turbo, toggle, and page switching.
 - **Macros.** Combos played back by the PC with exact timing, either once or repeating while held.
 - **Auto-switching layouts.** Tie a layout to a game's `.exe` and TailPad switches to it when that game is focused on your PC.
-- **Game launcher.** Browse your Steam, Epic and custom games on the phone and start them from there.
+- **Game launcher.** TailPad finds your games by itself: Steam, Epic, and games installed anywhere on your drives, including repacks. Browse them on the phone, with their icons, and tap one to start it.
 - **Sharing.** Send a layout as a link or a `.tailpad` file.
 - **Rumble.** When the game vibrates, your phone vibrates.
 - **2–4 players.** Each phone that connects becomes its own controller.
@@ -16,9 +16,10 @@ Turn your iPhone into a game controller for your Windows PC — over Tailscale, 
 ## Install
 
 ### PC (Windows 10/11)
-1. Install the **[ViGEmBus driver](https://github.com/nefarius/ViGEmBus/releases/latest)**, once. It's the driver that lets apps create virtual controllers.
-2. Download `TailPad.exe` from the latest [release](../../releases) or [build](../../actions), and run it. It lives in the system tray.
+1. Download `TailPad.exe` from the latest [release](../../releases) or [build](../../actions), and run it. It lives in the system tray.
+2. First launch only: TailPad sets up its built-in controller driver. Click **Yes** on the Windows prompt. There's nothing else to download.
 3. Allow it through Windows Firewall when asked (Private networks).
+4. TailPad scans your drives for games in the background. Missing one? Use **Games → Add game…**.
 
 ### iPhone
 1. Download `TailPad.ipa` from the latest release or build.

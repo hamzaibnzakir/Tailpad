@@ -33,14 +33,16 @@ static class Screenshots
         {
             PairingCode = "482913",
             Devices = { new PairedDevice { Id = "a", Name = "Hamza's iPhone", LastSeen = DateTime.Now } },
-            CustomGames =
+            CustomGames = { new CustomGame { Name = "Dolphin Emulator", Path = @"C:\Emu\Dolphin\Dolphin.exe" } },
+            ScannedGames =
             {
-                new CustomGame { Name = "ELDEN RING", Path = @"C:\Games\ELDEN RING\eldenring.exe" },
-                new CustomGame { Name = "Forza Horizon 5", Path = @"C:\Games\FH5\ForzaHorizon5.exe" },
-                new CustomGame { Name = "Dolphin Emulator", Path = @"C:\Emu\Dolphin\Dolphin.exe" },
-                new CustomGame { Name = "EA SPORTS FC 25", Path = @"C:\Games\FC25\FC25.exe" },
-                new CustomGame { Name = "Street Fighter 6", Path = @"C:\Games\SF6\StreetFighter6.exe" },
+                new ScannedGame { Name = "Grand Theft Auto V", Path = @"D:\Games\Grand.Theft.Auto.V-FitGirl\PlayGTAV.exe" },
+                new ScannedGame { Name = "eFootball", Path = @"D:\Games\eFootball\eFootball.exe" },
+                new ScannedGame { Name = "ELDEN RING", Path = @"D:\Games\ELDEN RING\eldenring.exe" },
+                new ScannedGame { Name = "Forza Horizon 5", Path = @"D:\Games\FH5\ForzaHorizon5.exe" },
+                new ScannedGame { Name = "Street Fighter 6", Path = @"D:\Games\SF6\StreetFighter6.exe" },
             },
+            LastScan = DateTime.Now,
         };
         var services = new WinServices(cfg, _ => { });
         var server = new HostServer(cfg, new DemoPads(), services);
