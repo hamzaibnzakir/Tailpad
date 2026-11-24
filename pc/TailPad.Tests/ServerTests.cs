@@ -122,7 +122,7 @@ public class ServerTests : IDisposable
     public ServerTests()
     {
         var p = Interlocked.Add(ref _port, 3);
-        _cfg = new Config { ControlPort = p, InputPort = p + 1, DsuPort = p + 2, PairingCode = "123456" };
+        _cfg = new Config { ControlPort = p, InputPort = p + 1, DsuPort = p + 2, PairingCode = "123456", SavePath = _cfgPath };
         // keep test config out of the real AppData
         Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", Path.GetTempPath());
         _server = new HostServer(_cfg, _pads, _host);
@@ -274,7 +274,7 @@ public class ServerTests : IDisposable
         var x = _pads.Pads.Last();
         await phone.Send(new JsonObject { ["t"] = "pad", ["pad"] = "ds4" });
         await Until(() => _pads.Pads.Last().Type == PadType.DS4);
-        Assert.True(x.Disposed);
+        await Until(() => x.Disposed); // old Xbox pad is unplugged right after the new one is plugged in
     }
 
     [Fact]

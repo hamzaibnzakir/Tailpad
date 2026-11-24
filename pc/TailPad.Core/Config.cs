@@ -63,15 +63,30 @@ public sealed class Config
         return new Config();
     }
 
-    public void Save(string? path = null)
+    /// <summary>Where Save() writes; null = %AppData%\TailPad\config.json.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public string? SavePath { get; set; }
+
+    /// <summary>Saves settings. Never throws: a locked file (antivirus, sync tools) must not break a connection.</summary>
+    public bool Save(string? path = null)
     {
         lock (Gate)
         {
-            var p = path ?? FilePath;
-            Directory.CreateDirectory(Path.GetDirectoryName(p)!);
-            var tmp = p + ".tmp";
-            File.WriteAllText(tmp, JsonSerializer.Serialize(this, Json));
-            File.Move(tmp, p, true);
+            var p = path ?? SavePath ?? FilePath;
+            for (int attempt = 0; attempt < 3; attempt++)
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(p)!);
+                    var tmp = p + "." + Environment.ProcessId + ".tmp";
+                    File.WriteAllText(tmp, JsonSerializer.Serialize(this, Json));
+                    File.Move(tmp, p, true);
+                    return true;
+                }
+                catch (IOException) { Thread.Sleep(50); }
+                catch (UnauthorizedAccessException) { Thread.Sleep(50); }
+            }
+            return false;
         }
     }
 }
