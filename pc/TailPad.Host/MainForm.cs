@@ -21,7 +21,7 @@ sealed class MainForm : Form
     readonly ViGEmPadFactory _pads;
     readonly IMainHost _app;
 
-    readonly PictureBox _qr = new() { SizeMode = PictureBoxSizeMode.Zoom, Size = new Size(230, 230), BackColor = Color.White };
+    readonly PictureBox _qr = new() { SizeMode = PictureBoxSizeMode.Zoom, Size = new Size(200, 200), BackColor = Color.White };
     readonly Label _code = new() { AutoSize = true, Font = new Font("Segoe UI", 30, FontStyle.Bold), ForeColor = AppIcon.Accent };
     readonly Label _addr = new() { AutoSize = true, Font = new Font("Consolas", 11), ForeColor = Fg };
     readonly Label _driver = new() { AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = Dim };
@@ -41,7 +41,7 @@ sealed class MainForm : Form
         Icon = icon;
         BackColor = Bg; ForeColor = Fg;
         Font = new Font("Segoe UI", 9.5f);
-        ClientSize = new Size(940, 560);
+        ClientSize = new Size(960, 640);
         MinimumSize = new Size(820, 500);
         StartPosition = FormStartPosition.CenterScreen;
 

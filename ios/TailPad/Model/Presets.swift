@@ -80,7 +80,7 @@ enum Presets {
         var move = stick(.left, 0.18, 0.62, 0.52)
         move.floating = true
         move.edge = PadAction(buttons: [.ls])     // push to the edge = sprint
-        var aim = pill(PadAction(lt: 1), 0.07, 0.38, w: 0.2, h: 0.2, label: "AIM", color: "#2A2440")
+        var aim = pill(PadAction(lt: 1), 0.09, 0.3, w: 0.2, h: 0.2, label: "AIM", color: "#2A2440")
         aim.pull = PadAction(rt: 1)                // drag outward while aiming = fire
         aim.shape = .circle
         let fire = Control(kind: .button, x: 0.91, y: 0.68, w: 0.24, label: "FIRE", color: "#4A2222", action: PadAction(rt: 1))
@@ -88,7 +88,7 @@ enum Presets {
             look, move,
             pill(PadAction(buttons: [.lb]), 0.2, 0.1, w: 0.22, label: "LB"),
             pill(PadAction(buttons: [.rb]), 0.8, 0.1, w: 0.22, label: "RB"),
-            btn(.back, 0.42, 0.1, 0.1, color: shoulder), btn(.start, 0.58, 0.1, 0.1, color: shoulder),
+            btn(.back, 0.4, 0.22, 0.1, color: shoulder), btn(.start, 0.6, 0.22, 0.1, color: shoulder),
             aim, fire,
             btn(.a, 0.91, 0.36, 0.15, label: "JUMP"), btn(.b, 0.8, 0.86, 0.13, label: "CRCH"),
             btn(.x, 0.77, 0.6, 0.13, label: "RELD"), btn(.y, 0.79, 0.33, 0.12, label: "SWAP"),
@@ -109,7 +109,7 @@ enum Presets {
             pill(PadAction(buttons: [.rb]), 0.76, 0.12, w: 0.22, label: "RB"),
             btn(.a, 0.75, 0.75, 0.17, label: "A"), btn(.b, 0.75, 0.45, 0.15, label: "B"),
             btn(.x, 0.25, 0.45, 0.15, label: "X"), btn(.y, 0.25, 0.75, 0.17, label: "Y"),
-            btn(.back, 0.42, 0.12, 0.11, color: shoulder), btn(.start, 0.58, 0.12, 0.11, color: shoulder),
+            btn(.back, 0.4, 0.26, 0.11, color: shoulder), btn(.start, 0.6, 0.26, 0.11, color: shoulder),
             dpad(0.5, 0.72, 0.36, eight: false),
         ]
         return Layout(name: "Racing (tilt to steer)", pages: [LayoutPage(name: "Main", controls: c)],

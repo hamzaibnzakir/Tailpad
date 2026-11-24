@@ -39,8 +39,8 @@ final class AppModel: ObservableObject {
 
         // whenever the active layout changes (picked, edited, auto-switched) → reload everything
         store.$layouts.combineLatest(store.$activeId)
-            .map { [weak self] _, _ in self?.store.active }
-            .compactMap { $0 }
+            // use the emitted values: @Published fires *before* the property is updated
+            .map { layouts, id in layouts.first { $0.id == id } ?? layouts.first ?? Presets.xbox() }
             .removeDuplicates()
             .sink { [weak self] l in self?.apply(l) }
             .store(in: &bag)

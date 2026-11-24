@@ -15,7 +15,6 @@ struct PlayView: View {
             let page = engine.page
             let frames = Dictionary(uniqueKeysWithValues: page.controls.map { ($0.id, controlFrame($0, in: size)) })
             ZStack(alignment: .topLeading) {
-                Color(hex: layout.background).ignoresSafeArea()
                 if let light = conn.lightColor, layout.padType == .ds4 {
                     // DS4 lightbar colour from the game, as a soft glow along the top
                     LinearGradient(colors: [Color(light).opacity(0.35), .clear], startPoint: .top, endPoint: .center)
@@ -57,7 +56,7 @@ struct PlayView: View {
                 TouchSurface(engine: engine, frames: frames) { o in model.motion.setOrientation(o) }
             }
         }
-        .ignoresSafeArea()
+        .background(Color(hex: engine.layout.background).ignoresSafeArea())
         .persistentSystemOverlays(.hidden)
         .defersSystemGestures(on: .all)
     }

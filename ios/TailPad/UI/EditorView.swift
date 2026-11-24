@@ -72,7 +72,7 @@ struct EditorView: View {
                 }
             }
         }
-        .ignoresSafeArea(edges: .bottom)
+        .background(Color(hex: draft.background).ignoresSafeArea())
         .persistentSystemOverlays(.hidden)
         .sheet(isPresented: $showLayoutSettings) { LayoutSettingsSheet(layout: $draft, pageIndex: $pageIndex) }
         .sheet(isPresented: $showMacros) { MacroListSheet(layout: $draft) }
