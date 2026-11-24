@@ -11,7 +11,7 @@ struct PlayView: View {
 
     private var streaming: Bool { conn.streamState != .off }
     /// with a real controller connected, the touch controls get out of the way of the game
-    private var touchHidden: Bool { streaming && controllers.name != nil && settings.hideTouchWithController }
+    private var touchHidden: Bool { streaming && controllers.name != nil && settings.hideTouchWithController && model.demo == nil }
 
     var body: some View {
         GeometryReader { geo in
@@ -83,6 +83,7 @@ struct PlayView: View {
 /// Top strip: connection dot + ping, layout name, page dots, menu button.
 struct HUD: View {
     @EnvironmentObject var model: AppModel
+    @EnvironmentObject var controllers: Controllers
     @EnvironmentObject var engine: PadEngine
     @EnvironmentObject var conn: Connection
     @EnvironmentObject var settings: AppSettings
@@ -153,7 +154,8 @@ struct HUD: View {
         if conn.streamState == .playing {
             let i = conn.streamInfo
             let ping = conn.pingMs.map { "\($0) ms · " } ?? ""
-            return "\(ping)\(i.height)p · \(i.fps) fps · \(String(format: "%.1f", Double(i.kbps) / 1000)) Mbps · \(i.encoder)"
+            let pad = controllers.name.map { " · 🎮 \($0)" } ?? ""
+            return "\(ping)\(i.height)p · \(i.fps) fps · \(String(format: "%.1f", Double(i.kbps) / 1000)) Mbps · \(i.encoder)\(pad)"
         }
         switch conn.status {
         case .connected:

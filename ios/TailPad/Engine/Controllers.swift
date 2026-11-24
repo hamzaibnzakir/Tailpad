@@ -26,7 +26,8 @@ final class Controllers: ObservableObject {
     }
 
     private func attach(_ c: GCController) {
-        guard let pad = c.extendedGamepad else { return }
+        // only real controllers (not on-screen virtual ones or snapshots)
+        guard let pad = c.extendedGamepad, !c.isSnapshot, !(c.productCategory.lowercased().contains("virtual")) else { return }
         current = c
         name = c.vendorName ?? "Controller"
         c.playerIndex = .index1
