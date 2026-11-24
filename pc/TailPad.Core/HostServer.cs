@@ -313,6 +313,27 @@ public sealed class HostServer : IDisposable
                     catch (Exception e) { s.Send(new JsonObject { ["t"] = "info", ["msg"] = "Launch failed: " + e.Message }); }
                     break;
                 }
+            case "stream":
+                {
+                    var on = m["on"] is JsonValue ov && ov.TryGetValue(out bool o) && o;
+                    try { s.RemotePlay?.Dispose(); } catch { }
+                    s.RemotePlay = null;
+                    if (!on) { s.Send(new JsonObject { ["t"] = "stream", ["state"] = "stopped" }); Log?.Invoke($"{s.Name} stopped remote play"); break; }
+                    int I(string k, int def, int lo, int hi) => m[k] is JsonValue v && v.TryGetValue(out int x) ? Math.Clamp(x, lo, hi) : def;
+                    var req = new StreamRequest(I("height", 720, 360, 1440), I("fps", 60, 24, 120), I("kbps", 10_000, 1_000, 60_000),
+                        m["audio"] is not JsonValue av || !av.TryGetValue(out bool a) || a);
+                    try
+                    {
+                        s.RemotePlay = _host.StartStream(req, pkt => SendDatagram(s, pkt), st => { st["t"] = "stream"; s.Send(st); });
+                        Log?.Invoke($"{s.Name} started remote play ({req.Height}p{req.Fps})");
+                    }
+                    catch (Exception e)
+                    {
+                        s.Send(new JsonObject { ["t"] = "stream", ["state"] = "error", ["msg"] = e.Message });
+                        Log?.Invoke("Remote play failed: " + e.Message);
+                    }
+                    break;
+                }
             case "bye":
                 return false;
         }
@@ -332,10 +353,18 @@ public sealed class HostServer : IDisposable
             if (!InputPacket.TryParse(r.Buffer, out var p)) continue;
             if (!_byKey.TryGetValue(p.Key, out var s)) continue;
             if (!Norm(r.RemoteEndPoint.Address).Equals(s.Address)) continue; // key must come from the paired phone
+            s.UdpEndpoint = r.RemoteEndPoint;
             if (!s.Accept(p)) continue;
             if (_cfg.GyroMouse && (p.MouseDx != 0 || p.MouseDy != 0))
                 try { _host.MoveMouse(p.MouseDx, p.MouseDy); } catch { }
         }
+    }
+
+    void SendDatagram(Session s, byte[] pkt)
+    {
+        var ep = s.UdpEndpoint;
+        if (ep == null || _udp == null) return;
+        try { _udp.Send(pkt, pkt.Length, ep); } catch { /* phone went away; TCP close cleans up */ }
     }
 
     void OnPublished(Session s) => _dsu?.Publish(s.DsuSlot);

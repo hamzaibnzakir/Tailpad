@@ -33,6 +33,7 @@ Newline-delimited JSON. Every message has a `t` (type) field.
 | `games` | – | Ask for the game library |
 | `launch` | `id` | Launch a game from the library |
 | `ping` | `ts` | Latency probe, echoed as `pong` |
+| `stream` | `on`, `height`, `fps`, `kbps`, `audio` | Start/stop remote play of the focused game window |
 | `bye` | – | Clean disconnect |
 
 Macro step: `{"b":<button bits>,"lt":0-1,"rt":0-1,"lx":-1..1,"ly":-1..1,"rx":-1..1,"ry":-1..1,"ms":<hold time>}`.
@@ -48,6 +49,7 @@ An empty step (`{"ms":80}`) is a pause. Macro output is merged on top of what yo
 | `fg` | `exe`, `title` | Game/app in focus on the PC — phone auto-switches layout |
 | `pong` | `ts` | Latency reply |
 | `info` | `msg` | Message to show on the phone |
+| `stream` | `state`: `started` (`w`,`h`,`fps`,`encoder`,`target`) · `stats` (`fps`,`kbps`) · `error` (`msg`) · `stopped` | Remote-play status |
 
 ## Input packet (UDP, little-endian, 68 bytes)
 
@@ -89,3 +91,16 @@ Packets with an older sequence number than the last one are dropped. If no packe
 
 `tailpad://layout?d=<base64url(zlib(JSON))>` — opens in the app and imports the layout. The same JSON can be shared as a `.tailpad` file.
 Pairing QR: `tailpad://pair?host=<tailscale ip>&port=47800&code=<code>&pc=<name>`.
+
+## Remote play (UDP, PC → phone)
+
+Sent back to wherever the phone's input packets come from (so no extra port is opened on the phone).
+Video is H.264 (Annex B, an Access Unit Delimiter before each frame, SPS/PPS repeated on every keyframe, keyframe every second, no B-frames),
+captured with Desktop Duplication cropped to the focused game window and encoded on the GPU (NVENC → Quick Sync → AMF → Media Foundation).
+
+| Packet | Header | Payload |
+|---|---|---|
+| Video `TPV1` | u32 magic · u32 frame · u16 fragment · u16 fragments · u8 flags (bit0 keyframe) · u8 · u16 · u32 time ms (20 bytes) | ≤1100 bytes of the frame |
+| Audio `TPA1` | u32 magic · u32 seq · u32 time ms (12 bytes) | one Opus packet, 10 ms, 48 kHz stereo |
+
+If any fragment of a frame is lost the phone drops frames until the next keyframe (≤1 s) instead of showing smeared video.

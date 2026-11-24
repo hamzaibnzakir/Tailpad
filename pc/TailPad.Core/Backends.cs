@@ -28,6 +28,12 @@ public interface IHostServices
     void Launch(GameEntry game);
     IReadOnlyList<GameEntry> Games();
     void Notify(string message);
+
+    /// <summary>Start remote play: send packets with <paramref name="send"/>, report state with <paramref name="status"/>.
+    /// Dispose the result to stop.</summary>
+    IDisposable StartStream(StreamRequest request, Action<byte[]> send, Action<System.Text.Json.Nodes.JsonObject> status);
 }
+
+public sealed record StreamRequest(int Height = 720, int Fps = 60, int Kbps = 10_000, bool Audio = true);
 
 public sealed record GameEntry(string Id, string Name, string Source, string? Art, string Target);

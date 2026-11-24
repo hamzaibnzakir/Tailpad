@@ -27,6 +27,9 @@ public sealed class Session : IDisposable
     public bool Idle { get; private set; } = true;
     public MacroRunner Macros { get; }
     public DateTime Connected { get; } = DateTime.Now;
+    /// <summary>Where the phone's input packets come from — remote-play video/audio is sent back here.</summary>
+    public IPEndPoint? UdpEndpoint { get; set; }
+    public IDisposable? RemotePlay { get; set; }
 
     public Session(string deviceId, string name, uint key, IPAddress address, IVirtualPad pad, Stream stream, Action<Session> published)
     {
@@ -114,6 +117,8 @@ public sealed class Session : IDisposable
 
     public void Dispose()
     {
+        try { RemotePlay?.Dispose(); } catch { }
+        RemotePlay = null;
         Macros.Dispose();
         lock (_gate)
         {

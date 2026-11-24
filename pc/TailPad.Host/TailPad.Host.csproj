@@ -19,12 +19,18 @@
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Concentus" Version="2.2.3" />
+    <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="Nefarius.ViGEm.Client" Version="1.21.256" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
   </ItemGroup>
   <!-- Controller driver installer bundled inside the exe (downloaded by CI / scripts/get-driver.sh, BSD-3 licence) -->
   <ItemGroup Condition="Exists('Driver\ViGEmBus_Setup.exe')">
     <EmbeddedResource Include="Driver\ViGEmBus_Setup.exe" LogicalName="ViGEmBus_Setup.exe" />
+  </ItemGroup>
+  <!-- Video engine for remote play (FFmpeg LGPL build, downloaded by CI / scripts/get-ffmpeg.sh) -->
+  <ItemGroup Condition="Exists('Engine\ffmpeg.exe')">
+    <EmbeddedResource Include="Engine\ffmpeg.exe" LogicalName="ffmpeg.exe" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\TailPad.Core\TailPad.Core.csproj" />

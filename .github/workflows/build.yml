@@ -22,8 +22,20 @@ jobs:
       - name: Bundle controller driver
         shell: bash
         run: scripts/get-driver.sh
-      - name: Test
-        run: dotnet test pc/TailPad.Tests -c Release
+      - name: Bundle video engine (FFmpeg LGPL)
+        shell: pwsh
+        run: scripts/get-ffmpeg.ps1
+      - name: Test (incl. real encode with the bundled FFmpeg)
+        shell: pwsh
+        run: |
+          $env:TAILPAD_FFMPEG = "$PWD\pc\TailPad.Host\Engine\ffmpeg.exe"
+          dotnet test pc/TailPad.Tests -c Release --logger "console;verbosity=normal"
+      - name: Check screen capture on this machine (informational)
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $ff = "$PWD\pc\TailPad.Host\Engine\ffmpeg.exe"
+          & $ff -hide_banner -loglevel error -f lavfi -i "ddagrab=framerate=30,hwdownload,format=bgra" -frames:v 30 -f null - ; "ddagrab exit: $LASTEXITCODE"
       - name: Publish single-file exe
         run: dotnet publish pc/TailPad.Host -c Release -o out
       - name: Screenshot the PC window
@@ -104,6 +116,8 @@ jobs:
           shot games 0 9-games
           shot settings 0 10-settings
           shot connect 0 11-connect
+          shot stream 0 12-remote-play
+          shot stream 2 13-remote-play-shooter
       - uses: actions/upload-artifact@v4
         with:
           name: Screenshots-iPhone

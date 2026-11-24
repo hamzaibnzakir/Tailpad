@@ -14,3 +14,4 @@ DerivedData/
 xcuserdata/
 .DS_Store
 pc/TailPad.Host/Driver/
+pc/TailPad.Host/Engine/

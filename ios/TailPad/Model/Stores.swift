@@ -154,6 +154,21 @@ final class AppSettings: ObservableObject {
     @Published var flipY: Bool { didSet { d.set(flipY, forKey: "flipY") } }
     @Published var flipZ: Bool { didSet { d.set(flipZ, forKey: "flipZ") } }
     @Published var showStatus: Bool { didSet { d.set(showStatus, forKey: "showStatus") } }
+    // remote play
+    @Published var streamQuality: String { didSet { d.set(streamQuality, forKey: "streamQuality") } }
+    @Published var streamAudio: Bool { didSet { d.set(streamAudio, forKey: "streamAudio") } }
+    @Published var overlayOpacity: Double { didSet { d.set(overlayOpacity, forKey: "overlayOpacity") } }
+    @Published var hideTouchWithController: Bool { didSet { d.set(hideTouchWithController, forKey: "hideTouchWithController") } }
+
+    /// (height, fps, kbps) for the chosen stream quality
+    var streamParams: (Int, Int, Int) {
+        switch streamQuality {
+        case "540p60": return (540, 60, 6_000)
+        case "1080p60": return (1080, 60, 20_000)
+        case "720p30": return (720, 30, 6_000)
+        default: return (720, 60, 10_000)
+        }
+    }
 
     let deviceId: String
 
@@ -169,6 +184,10 @@ final class AppSettings: ObservableObject {
         flipY = d.bool(forKey: "flipY")
         flipZ = d.bool(forKey: "flipZ")
         showStatus = d.object(forKey: "showStatus") as? Bool ?? true
+        streamQuality = d.string(forKey: "streamQuality") ?? "720p60"
+        streamAudio = d.object(forKey: "streamAudio") as? Bool ?? true
+        overlayOpacity = d.object(forKey: "overlayOpacity") as? Double ?? 0.5
+        hideTouchWithController = d.object(forKey: "hideTouchWithController") as? Bool ?? true
         if let id = d.string(forKey: "deviceId") { deviceId = id } else {
             deviceId = UUID().uuidString
             d.set(deviceId, forKey: "deviceId")

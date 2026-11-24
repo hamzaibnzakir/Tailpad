@@ -21,6 +21,9 @@ public sealed class WinServices : IHostServices
 
     public void Notify(string message) => _notify(message);
 
+    public IDisposable StartStream(StreamRequest request, Action<byte[]> send, Action<System.Text.Json.Nodes.JsonObject> status)
+        => new RemotePlaySession(request, send, status);
+
     public IReadOnlyList<GameEntry> Games()
     {
         lock (_gate)

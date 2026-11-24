@@ -18,6 +18,7 @@ struct RootView: View {
                 case "editor":
                     EditorView(layout: model.store.active,
                                select: model.store.active.pages[0].controls.first { $0.kind == .button }?.id)
+                case "stream": PlayView(showMenu: $showMenu)
                 default: PlayView(showMenu: $showMenu)
                 }
             } else if settings.isConfigured {

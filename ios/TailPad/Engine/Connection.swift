@@ -38,6 +38,13 @@ final class Connection: ObservableObject {
     @Published private(set) var foregroundTitle = ""
     @Published var toast: String?
 
+    // remote play
+    struct StreamInfo: Equatable { var width = 0, height = 0, fps = 0, kbps = 0, encoder = "", target = "" }
+    enum StreamState: Equatable { case off, starting, playing, failed(String) }
+    @Published private(set) var streamState: StreamState = .off
+    @Published private(set) var streamInfo = StreamInfo()
+    let player = StreamPlayer()
+
     var onForeground: ((String) -> Void)?
     var onTokenSaved: ((String, String) -> Void)?   // host, token
     var onPCName: ((String) -> Void)?
@@ -64,6 +71,8 @@ final class Connection: ObservableObject {
     private var code = ""
     private var padType: PadType = .x360
     private var deviceName = UIDevice.current.name
+    /// remote play to resume after a reconnect
+    private var streamWanted: (Int, Int, Int, Bool)?
 
     init(mixer: InputMixer, haptics: Haptics) {
         self.mixer = mixer
@@ -124,6 +133,26 @@ final class Connection: ObservableObject {
 
     func stopMacro(_ id: UUID) { queue.async { self.sendJSON(["t": "macroStop", "id": id.uuidString]) } }
     func requestGames() { queue.async { self.sendJSON(["t": "games"]) } }
+
+    /// Ask the PC to start streaming the focused game to this phone.
+    func startStream(height: Int, fps: Int, kbps: Int, audio: Bool = true) {
+        streamState = .starting
+        player.start()
+        queue.async {
+            self.streamWanted = (height, fps, kbps, audio)
+            self.sendFrame() // make sure the PC knows where to send video
+            self.sendJSON(["t": "stream", "on": true, "height": height, "fps": fps, "kbps": kbps, "audio": audio])
+        }
+    }
+
+    func stopStream() {
+        streamState = .off
+        player.stop()
+        queue.async {
+            self.streamWanted = nil
+            self.sendJSON(["t": "stream", "on": false])
+        }
+    }
     func launch(_ g: PCGame) { queue.async { self.sendJSON(["t": "launch", "id": g.id]) } }
 
     /// Screenshot/demo mode: pretend we're connected with sample data.
@@ -139,6 +168,12 @@ final class Connection: ObservableObject {
                                  art: URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\($0.0)/header.jpg")) }
             + [PCGame(id: "scan:1", name: "Grand Theft Auto V", source: "PC", art: Self.demoIcon()),
                PCGame(id: "scan:2", name: "eFootball", source: "PC", art: Self.demoIcon())]
+    }
+
+    /// Screenshots: pretend a stream is running (the picture comes from a bundled clip).
+    func demoStream() {
+        streamState = .playing
+        streamInfo = StreamInfo(width: 1280, height: 720, fps: 60, kbps: 9_800, encoder: "NVIDIA", target: "GTA5")
     }
 
     /// sample icon for screenshots (a real one comes from the game's .exe on the PC)
@@ -297,6 +332,28 @@ final class Connection: ObservableObject {
                 self.foregroundTitle = title
                 self.onForeground?(exe)
             }
+        case "stream":
+            let st = m["state"] as? String ?? ""
+            func i(_ k: String) -> Int { (m[k] as? NSNumber)?.intValue ?? 0 }
+            DispatchQueue.main.async {
+                switch st {
+                case "started":
+                    self.streamInfo.width = i("w"); self.streamInfo.height = i("h"); self.streamInfo.fps = i("fps")
+                    self.streamInfo.encoder = m["encoder"] as? String ?? ""
+                    self.streamInfo.target = m["target"] as? String ?? ""
+                    if self.streamState != .off { self.streamState = .playing }
+                case "stats":
+                    self.streamInfo.fps = self.player.takeShownFrames()
+                    self.streamInfo.kbps = i("kbps")
+                case "error":
+                    let msg = m["msg"] as? String ?? "Remote play stopped"
+                    self.streamState = .failed(msg)
+                    self.toast = msg
+                case "info":
+                    self.toast = m["msg"] as? String
+                default: break
+                }
+            }
         case "info":
             let msg = m["msg"] as? String ?? ""
             DispatchQueue.main.async { self.toast = msg }
@@ -320,6 +377,11 @@ final class Connection: ObservableObject {
         let u = NWConnection(host: NWEndpoint.Host(host), port: p, using: params)
         udp = u
         u.start(queue: queue)
+        receiveDatagrams(u)
+        // a reconnect while streaming picks the stream back up
+        if let w = streamWanted {
+            sendJSON(["t": "stream", "on": true, "height": w.0, "fps": w.1, "kbps": w.2, "audio": w.3])
+        }
 
         timer?.cancel()
         let t = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
@@ -327,6 +389,14 @@ final class Connection: ObservableObject {
         t.setEventHandler { [weak self] in self?.sendFrame() }
         t.resume()
         timer = t
+    }
+
+    private func receiveDatagrams(_ u: NWConnection) {
+        u.receiveMessage { [weak self] data, _, _, err in
+            guard let self, u === self.udp else { return }
+            if let data, !data.isEmpty { self.player.handle(data) }
+            if err == nil { self.receiveDatagrams(u) }
+        }
     }
 
     private func sendFrame() {

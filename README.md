@@ -10,6 +10,7 @@ Turn your iPhone into a game controller for your Windows PC — over Tailscale, 
 - **Auto-switching layouts.** Tie a layout to a game's `.exe` and TailPad switches to it when that game is focused on your PC.
 - **Game launcher.** TailPad finds your games by itself: Steam, Epic, and games installed anywhere on your drives, including repacks. Browse them on the phone, with their icons, and tap one to start it.
 - **Sharing.** Send a layout as a link or a `.tailpad` file.
+- **Remote play.** Stream the game you're playing on the PC to your iPhone at 720p 60 fps with sound, like PS Remote Play. Your touch layout sits see-through over the video, or you can use a Bluetooth Xbox/PlayStation controller paired with the phone.
 - **Rumble.** When the game vibrates, your phone vibrates.
 - **2–4 players.** Each phone that connects becomes its own controller.
 

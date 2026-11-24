@@ -11,6 +11,7 @@ final class AppModel: ObservableObject {
     let motion: MotionEngine
     let connection: Connection
     let engine: PadEngine
+    let controllers: Controllers
 
     @Published var toast: String?
 
@@ -29,6 +30,7 @@ final class AppModel: ObservableObject {
         connection = Connection(mixer: mixer, haptics: haptics)
         engine = PadEngine(layout: store.active, mixer: mixer, motion: motion, haptics: haptics)
         engine.connection = connection
+        controllers = Controllers(mixer: mixer)
 
         connection.onTokenSaved = { [weak self] host, token in self?.settings.setToken(token, for: host) }
         connection.onPCName = { [weak self] name in self?.settings.pcName = name }
@@ -58,6 +60,11 @@ final class AppModel: ObservableObject {
         if let demo {
             if store.layouts.indices.contains(demo.layout) { store.activate(store.layouts[demo.layout].id) }
             if demo.screen != "connect" { connection.demo() }
+            if demo.screen == "stream", let url = Bundle.main.url(forResource: "demo-stream", withExtension: "h264"),
+               let clip = try? Data(contentsOf: url) {
+                connection.demoStream()
+                connection.player.playDemo(clip)
+            }
         }
     }
 
@@ -78,6 +85,15 @@ final class AppModel: ObservableObject {
         let host = settings.host.trimmingCharacters(in: .whitespacesAndNewlines)
         connection.connect(host: host, port: settings.port, deviceId: settings.deviceId,
                            token: settings.token(for: host), code: code, padType: store.active.padType)
+    }
+
+    func toggleStream() {
+        if connection.streamState == .off || { if case .failed = connection.streamState { return true }; return false }() {
+            let (h, f, k) = settings.streamParams
+            connection.startStream(height: h, fps: f, kbps: k, audio: settings.streamAudio)
+        } else {
+            connection.stopStream()
+        }
     }
 
     func show(_ text: String) {

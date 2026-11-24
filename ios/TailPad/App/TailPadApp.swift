@@ -13,6 +13,7 @@ struct TailPadApp: App {
                 .environmentObject(model.store)
                 .environmentObject(model.connection)
                 .environmentObject(model.engine)
+                .environmentObject(model.controllers)
                 .preferredColorScheme(.dark)
                 .onOpenURL { model.open($0) }
         }

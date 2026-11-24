@@ -40,6 +40,15 @@ sealed class FakeHost : IHostServices
     public void Launch(GameEntry g) => Launched.Add(g.Id);
     public IReadOnlyList<GameEntry> Games() => new[] { new GameEntry("steam:570", "Dota 2", "Steam", null, "steam://rungameid/570") };
     public void Notify(string m) { }
+    public StreamRequest? LastStream;
+    public Action<byte[]>? StreamSend;
+    public IDisposable StartStream(StreamRequest r, Action<byte[]> send, Action<JsonObject> status)
+    {
+        LastStream = r; StreamSend = send;
+        status(new JsonObject { ["state"] = "started", ["w"] = 1280, ["h"] = r.Height, ["encoder"] = "fake" });
+        return new Stopper(() => StreamSend = null);
+    }
+    sealed class Stopper(Action a) : IDisposable { public void Dispose() => a(); }
 }
 
 sealed class FakePhone : IDisposable
@@ -94,6 +103,9 @@ sealed class FakePhone : IDisposable
         var b = InputPacket.Build(Key, seq, s);
         _udp.Send(b, b.Length, new IPEndPoint(IPAddress.Loopback, _udpPort));
     }
+
+    public async Task<byte[]> ReceiveUdp(int timeoutMs = 3000) =>
+        (await _udp.ReceiveAsync().WaitAsync(TimeSpan.FromMilliseconds(timeoutMs))).Buffer;
 
     public void Dispose() { _tcp.Dispose(); _udp.Dispose(); }
 }
@@ -238,8 +250,9 @@ public class ServerTests : IDisposable
         await phone.Send(new JsonObject { ["t"] = "macro", ["id"] = "turbo", ["loop"] = true, ["steps"] = new JsonArray { new JsonObject { ["b"] = 1 << Btn.A, ["ms"] = 20 } } });
         await Until(() => Btn.Has(pad.Last.Buttons, Btn.A));
         await phone.Send(new JsonObject { ["t"] = "macroStop", ["id"] = "turbo" });
-        await Task.Delay(120);
-        Assert.False(Btn.Has(pad.Last.Buttons, Btn.A));
+        await Until(() => !Btn.Has(pad.Last.Buttons, Btn.A));
+        await Task.Delay(100);
+        Assert.False(Btn.Has(pad.Last.Buttons, Btn.A)); // and it stays released
     }
 
     [Fact]
