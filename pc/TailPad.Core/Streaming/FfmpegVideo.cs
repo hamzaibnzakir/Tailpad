@@ -6,6 +6,22 @@ namespace TailPad.Core.Streaming;
 /// Runs FFmpeg to capture + encode H.264 with low-latency settings, cuts its output into frames
 /// and sends them as packets. One instance = one capture target; restart it to change target.
 /// </summary>
+/// <summary>How to grab the screen region of the game window.</summary>
+public static class Capture
+{
+    /// <summary>GPU Desktop Duplication (fast). x/y are relative to the monitor.</summary>
+    public static (string[] input, string? filter) Gpu(int output, int x, int y, int w, int h, StreamRequest r) =>
+        (new[] { "-f", "lavfi", "-i",
+            $"ddagrab=output_idx={output}:framerate={r.Fps}:draw_mouse=1:offset_x={x}:offset_y={y}:video_size={w}x{h}," +
+            $"hwdownload,format=bgra,scale=-2:{Math.Min(r.Height, h)}:flags=fast_bilinear,format=nv12" }, null);
+
+    /// <summary>Classic GDI screen grab (works on every PC, uses more CPU). x/y are desktop coordinates.</summary>
+    public static (string[] input, string? filter) Gdi(int x, int y, int w, int h, StreamRequest r) =>
+        (new[] { "-f", "gdigrab", "-framerate", r.Fps.ToString(), "-draw_mouse", "1",
+                 "-offset_x", x.ToString(), "-offset_y", y.ToString(), "-video_size", $"{w}x{h}", "-i", "desktop" },
+         $"scale=-2:{Math.Min(r.Height, h)}:flags=fast_bilinear,format=nv12");
+}
+
 public sealed class FfmpegVideo : IDisposable
 {
     readonly Process _p;
@@ -35,15 +51,21 @@ public sealed class FfmpegVideo : IDisposable
         _ => new(),
     };
 
-    public static List<string> BuildArgs(string inputFilter, string encoder, StreamRequest r)
+    public static List<string> BuildArgs(string inputFilter, string encoder, StreamRequest r) =>
+        BuildArgs(new[] { "-f", "lavfi", "-i", inputFilter }, null, encoder, r);
+
+    /// <param name="input">FFmpeg input options (capture device + source)</param>
+    /// <param name="videoFilter">optional -vf chain applied before encoding</param>
+    public static List<string> BuildArgs(IEnumerable<string> input, string? videoFilter, string encoder, StreamRequest r)
     {
         var a = new List<string>
         {
             "-hide_banner", "-loglevel", "error", "-nostdin",
             "-fflags", "nobuffer", "-flags", "low_delay", "-probesize", "32",
-            "-f", "lavfi", "-i", inputFilter,
-            "-an", "-c:v", encoder,
         };
+        a.AddRange(input);
+        if (!string.IsNullOrEmpty(videoFilter)) { a.Add("-vf"); a.Add(videoFilter); }
+        a.AddRange(new[] { "-an", "-c:v", encoder });
         a.AddRange(EncoderOptions(encoder, r));
         int k = r.Kbps;
         a.AddRange(new[]

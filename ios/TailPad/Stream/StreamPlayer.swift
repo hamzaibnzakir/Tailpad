@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreMedia
+import SwiftUI
 import UIKit
 
 /// Receives remote-play packets from the PC, rebuilds video frames, decodes them in hardware

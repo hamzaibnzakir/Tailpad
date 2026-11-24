@@ -63,7 +63,7 @@ final class AppModel: ObservableObject {
             if demo.screen == "stream", let url = Bundle.main.url(forResource: "demo-stream", withExtension: "h264"),
                let clip = try? Data(contentsOf: url) {
                 connection.demoStream()
-                connection.player.playDemo(clip)
+                connection.streamPlayer.playDemo(clip)
             }
         }
     }

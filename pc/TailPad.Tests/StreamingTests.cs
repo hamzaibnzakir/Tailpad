@@ -133,6 +133,35 @@ public class StreamControlTests : IDisposable
 
 public class WindowsEncoderTests
 {
+    /// <summary>Real screen capture → encode → packets → frames, on an actual Windows desktop.</summary>
+    [Fact]
+    public void Windows_screen_capture_streams_frames()
+    {
+        var ff = Environment.GetEnvironmentVariable("TAILPAD_FFMPEG");
+        if (!OperatingSystem.IsWindows() || string.IsNullOrEmpty(ff)) return;
+        var enc = FfmpegVideo.WindowsEncoders.First(e => FfmpegVideo.Probe(ff, e, 20000));
+        var req = new StreamRequest(720, 30, 4000);
+        var asm = new FrameAssembler();
+        int frames = 0, keys = 0;
+        var (input, filter) = Capture.Gdi(0, 0, 640, 480, req);
+        var args = FfmpegVideo.BuildArgs(InsertDuration(input), filter, enc, req);
+        var done = new ManualResetEventSlim();
+        using var v = new FfmpegVideo(ff, args, p => { lock (asm) { var f = asm.Push(p); if (f != null) { frames++; if (f.Value.key) keys++; } } });
+        v.Exited += _ => done.Set();
+        Assert.True(done.Wait(TimeSpan.FromSeconds(60)), "capture didn't finish: " + v.LastError);
+        Console.WriteLine($"GDI capture with {enc}: {frames} frames, {keys} keyframes, {v.Bytes / 1024} KB, last error '{v.LastError}'");
+        Assert.True(frames >= 30, $"only {frames} frames: {v.LastError}");
+        Assert.True(keys >= 1);
+    }
+
+    // put "-t 3" before "-i" so the capture stops by itself
+    static string[] InsertDuration(string[] input)
+    {
+        var l = input.ToList();
+        l.Insert(l.IndexOf("-i"), "3"); l.Insert(l.IndexOf("3"), "-t");
+        return l.ToArray();
+    }
+
     [Fact]
     public void At_least_one_windows_encoder_works()
     {

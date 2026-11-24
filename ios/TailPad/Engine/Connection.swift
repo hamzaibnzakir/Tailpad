@@ -43,7 +43,7 @@ final class Connection: ObservableObject {
     enum StreamState: Equatable { case off, starting, playing, failed(String) }
     @Published private(set) var streamState: StreamState = .off
     @Published private(set) var streamInfo = StreamInfo()
-    let player = StreamPlayer()
+    let streamPlayer = StreamPlayer()
 
     var onForeground: ((String) -> Void)?
     var onTokenSaved: ((String, String) -> Void)?   // host, token
@@ -137,7 +137,7 @@ final class Connection: ObservableObject {
     /// Ask the PC to start streaming the focused game to this phone.
     func startStream(height: Int, fps: Int, kbps: Int, audio: Bool = true) {
         streamState = .starting
-        player.start()
+        streamPlayer.start()
         queue.async {
             self.streamWanted = (height, fps, kbps, audio)
             self.sendFrame() // make sure the PC knows where to send video
@@ -147,7 +147,7 @@ final class Connection: ObservableObject {
 
     func stopStream() {
         streamState = .off
-        player.stop()
+        streamPlayer.stop()
         queue.async {
             self.streamWanted = nil
             self.sendJSON(["t": "stream", "on": false])
@@ -343,7 +343,7 @@ final class Connection: ObservableObject {
                     self.streamInfo.target = m["target"] as? String ?? ""
                     if self.streamState != .off { self.streamState = .playing }
                 case "stats":
-                    self.streamInfo.fps = self.player.takeShownFrames()
+                    self.streamInfo.fps = self.streamPlayer.takeShownFrames()
                     self.streamInfo.kbps = i("kbps")
                 case "error":
                     let msg = m["msg"] as? String ?? "Remote play stopped"
@@ -394,7 +394,7 @@ final class Connection: ObservableObject {
     private func receiveDatagrams(_ u: NWConnection) {
         u.receiveMessage { [weak self] data, _, _, err in
             guard let self, u === self.udp else { return }
-            if let data, !data.isEmpty { self.player.handle(data) }
+            if let data, !data.isEmpty { self.streamPlayer.handle(data) }
             if err == nil { self.receiveDatagrams(u) }
         }
     }

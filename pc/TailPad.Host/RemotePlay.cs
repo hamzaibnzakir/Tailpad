@@ -65,7 +65,7 @@ static class VideoEngine
 }
 
 /// <summary>Which window (and where on which monitor) we're streaming.</summary>
-readonly record struct CaptureTarget(IntPtr Hwnd, int Output, int X, int Y, int W, int H, string Name)
+readonly record struct CaptureTarget(IntPtr Hwnd, int Output, int X, int Y, int W, int H, string Name, int DesktopX = 0, int DesktopY = 0)
 {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
@@ -90,7 +90,7 @@ readonly record struct CaptureTarget(IntPtr Hwnd, int Output, int X, int Y, int 
     static CaptureTarget Whole(Screen s)
     {
         var idx = Array.IndexOf(Screen.AllScreens, s);
-        return new CaptureTarget(IntPtr.Zero, Math.Max(0, idx), 0, 0, Even(s.Bounds.Width), Even(s.Bounds.Height), "Desktop");
+        return new CaptureTarget(IntPtr.Zero, Math.Max(0, idx), 0, 0, Even(s.Bounds.Width), Even(s.Bounds.Height), "Desktop", s.Bounds.Left, s.Bounds.Top);
     }
 
     static int Even(int v) => v & ~1;
@@ -116,13 +116,11 @@ readonly record struct CaptureTarget(IntPtr Hwnd, int Output, int X, int Y, int 
         if (w < 320 || hh < 240) return null;
         string name;
         try { using var proc = Process.GetProcessById((int)pid); name = proc.ProcessName; } catch { name = "Game"; }
-        return new CaptureTarget(h, Math.Max(0, Array.IndexOf(Screen.AllScreens, screen)), x - b.Left, y - b.Top, w, hh, name);
+        return new CaptureTarget(h, Math.Max(0, Array.IndexOf(Screen.AllScreens, screen)), x - b.Left, y - b.Top, w, hh, name, x, y);
     }
 
-    /// <summary>FFmpeg input: Desktop Duplication on the GPU, cropped to the window, scaled to the requested height.</summary>
-    public string Filter(StreamRequest r) =>
-        $"ddagrab=output_idx={Output}:framerate={r.Fps}:draw_mouse=1:offset_x={X}:offset_y={Y}:video_size={W}x{H}," +
-        $"hwdownload,format=bgra,scale=-2:{Math.Min(r.Height, H)}:flags=fast_bilinear,format=nv12";
+    public (string[] input, string? filter) Input(StreamRequest r, bool gpu) =>
+        gpu ? Capture.Gpu(Output, X, Y, W, H, r) : Capture.Gdi(DesktopX, DesktopY, W, H, r);
 }
 
 /// <summary>Captures what the PC is playing (WASAPI loopback), encodes 10 ms Opus packets.</summary>
@@ -231,6 +229,7 @@ sealed class RemotePlaySession : IDisposable
     long _lastBytes;
     int _failures;
     bool _disposed;
+    bool _gpuCapture = true;
 
     public RemotePlaySession(StreamRequest req, Action<byte[]> send, Action<JsonObject> status)
     {
@@ -254,7 +253,8 @@ sealed class RemotePlaySession : IDisposable
             if (_disposed) return;
             var next = _video?.NextFrame ?? 1;
             _video?.Dispose();
-            var args = FfmpegVideo.BuildArgs(_target.Filter(_req), _encoder, _req);
+            var (input, filter) = _target.Input(_req, _gpuCapture);
+            var args = FfmpegVideo.BuildArgs(input, filter, _encoder, _req);
             _video = new FfmpegVideo(_ffmpeg, args, _send, next, _clock);
             _video.Exited += OnVideoExit;
             int outH = Math.Min(_req.Height, _target.H);
@@ -262,7 +262,7 @@ sealed class RemotePlaySession : IDisposable
             _status(new JsonObject
             {
                 ["state"] = "started", ["w"] = outW, ["h"] = outH, ["fps"] = _req.Fps,
-                ["encoder"] = VideoEngine.Friendly(_encoder), ["target"] = _target.Name,
+                ["encoder"] = VideoEngine.Friendly(_encoder) + (_gpuCapture ? "" : " · GDI"), ["target"] = _target.Name,
             });
         }
     }
@@ -270,6 +270,14 @@ sealed class RemotePlaySession : IDisposable
     void OnVideoExit(FfmpegVideo v)
     {
         if (_disposed || v != _video) return;
+        // GPU capture unavailable on this PC (or this monitor) → fall back to GDI capture
+        if (_gpuCapture && v.Frames == 0 && (v.LastError.Contains("ddagrab") || v.LastError.Contains("D3D11") || v.LastError.Contains("DXGI") || v.LastError.Length == 0))
+        {
+            _gpuCapture = false;
+            _status(new JsonObject { ["state"] = "info", ["msg"] = "Using compatible screen capture" });
+            StartVideo();
+            return;
+        }
         // the game went exclusive-fullscreen, changed resolution, or the window closed: re-aim and restart
         if (++_failures > 5)
         {

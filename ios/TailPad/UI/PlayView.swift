@@ -21,7 +21,7 @@ struct PlayView: View {
             let frames = touchHidden ? [:] : Dictionary(uniqueKeysWithValues: page.controls.map { ($0.id, controlFrame($0, in: size)) })
             ZStack(alignment: .topLeading) {
                 if streaming {
-                    StreamVideoView(player: conn.player)
+                    StreamVideoView(player: conn.streamPlayer)
                         .frame(width: size.width, height: size.height)
                         .allowsHitTesting(false)
                     if conn.streamState == .starting {
