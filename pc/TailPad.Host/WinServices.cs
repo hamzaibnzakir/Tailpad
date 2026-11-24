@@ -90,6 +90,9 @@ public sealed class WinServices : IHostServices
 
 public static class Tailnet
 {
+    /// <summary>Only used by --screenshot mode.</summary>
+    public static string? Override;
+
     /// <summary>This PC's Tailscale IPv4 (100.64.0.0/10), if Tailscale is up.</summary>
     public static string? Ip()
     {

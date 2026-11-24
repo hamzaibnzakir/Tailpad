@@ -19,14 +19,27 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
+      - name: Bundle controller driver
+        shell: bash
+        run: scripts/get-driver.sh
       - name: Test
         run: dotnet test pc/TailPad.Tests -c Release
       - name: Publish single-file exe
         run: dotnet publish pc/TailPad.Host -c Release -o out
+      - name: Screenshot the PC window
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force shots | Out-Null
+          Start-Process -FilePath out/TailPad.exe -ArgumentList '--screenshot', "$PWD\shots" -Wait
+          Get-ChildItem shots
       - uses: actions/upload-artifact@v4
         with:
           name: TailPad-Windows
           path: out/TailPad.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Screenshots-PC
+          path: shots/*.png
 
   ios:
     name: iPhone app (TailPad.ipa, unsigned for Sideloadly)
@@ -52,6 +65,49 @@ jobs:
         with:
           name: TailPad-iPhone
           path: ios/TailPad.ipa
+
+  screenshots:
+    name: iPhone screenshots (simulator)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build for the simulator
+        run: |
+          brew install xcodegen
+          cd ios && xcodegen generate
+          xcodebuild -project TailPad.xcodeproj -target TailPad -configuration Debug -sdk iphonesimulator \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES SYMROOT="$PWD/simbuild" -quiet build
+      - name: Take screenshots
+        run: |
+          DEV=$(xcrun simctl list devices available | grep -m1 -E "iPhone 16 Pro \(|iPhone 16 \(|iPhone 15 \(" | sed -E 's/.*\(([0-9A-F-]{36})\).*/\1/')
+          echo "Device: $DEV"
+          xcrun simctl boot "$DEV"
+          xcrun simctl bootstatus "$DEV" -b
+          xcrun simctl status_bar "$DEV" override --time "9:41" --batteryLevel 100 --cellularBars 4 || true
+          xcrun simctl install "$DEV" ios/simbuild/Debug-iphonesimulator/TailPad.app
+          mkdir -p shots
+          shot() {
+            xcrun simctl launch "$DEV" com.hamzaibnzakir.tailpad -demoScreen "$1" -demoLayout "$2"
+            sleep 6
+            xcrun simctl io "$DEV" screenshot "shots/ios-$3.png"
+            xcrun simctl terminate "$DEV" com.hamzaibnzakir.tailpad || true
+            sleep 1
+          }
+          shot play 0 1-xbox
+          shot play 1 2-playstation
+          shot play 2 3-shooter
+          shot play 3 4-racing
+          shot play 4 5-fighting
+          shot play 5 6-retro
+          shot editor 0 7-editor
+          shot menu 0 8-layouts
+          shot games 0 9-games
+          shot settings 0 10-settings
+          shot connect 0 11-connect
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Screenshots-iPhone
+          path: shots/*.png
 
   release:
     name: Publish release

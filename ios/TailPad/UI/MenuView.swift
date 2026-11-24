@@ -2,6 +2,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct MenuView: View {
+    var initialTab = 0
     @State private var tab = 0
 
     var body: some View {
@@ -16,6 +17,7 @@ struct MenuView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape") }.tag(3)
         }
         .tint(Theme.accent)
+        .onAppear { tab = initialTab }
     }
 }
 

@@ -4,7 +4,7 @@ using TailPad.Core;
 namespace TailPad.Host;
 
 /// <summary>Lives in the system tray; owns the server and opens the main window on demand.</summary>
-sealed class TrayApp : ApplicationContext
+sealed class TrayApp : ApplicationContext, IMainHost
 {
     readonly NotifyIcon _tray;
     readonly Config _cfg;
@@ -37,12 +37,50 @@ sealed class TrayApp : ApplicationContext
                 "TailPad", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
 
-        if (!_pads.TryInit()) AddLog("ViGEmBus driver missing — install it from the TailPad window");
+        if (!_pads.TryInit()) EnsureDriver(askFirst: true);
         _fg = new ForegroundWatcher((exe, title) => _server.BroadcastForeground(exe, title));
         Task.Run(_services.Rescan);
 
         if (!startHidden || !_pads.TryInit()) ShowWindow();
         else Balloon($"TailPad running — pairing code {_cfg.PairingCode}");
+    }
+
+    /// <summary>One-time setup of the bundled controller driver. Returns true when controllers work.</summary>
+    public bool EnsureDriver(bool askFirst)
+    {
+        if (_pads.TryInit()) return true;
+        if (!DriverSetup.Bundled)
+        {
+            AddLog("Controller driver missing and not bundled in this build");
+            return false;
+        }
+        if (askFirst && MessageBox.Show(
+                "TailPad needs to set up its controller driver once, so games can see your phone as a controller.\n\n" +
+                "Windows will ask for permission — click Yes. It takes a few seconds.",
+                "TailPad — one-time setup", MessageBoxButtons.OKCancel, MessageBoxIcon.Information) != DialogResult.OK)
+        {
+            AddLog("Driver setup skipped — open TailPad and click 'Set up controller driver' when ready");
+            return false;
+        }
+        AddLog("Setting up the controller driver…");
+        var r = DriverSetup.Install();
+        if (r == DriverSetup.Result.Installed && _pads.TryInit())
+        {
+            AddLog("Controller driver ready ✓");
+            Balloon("Controller driver ready — connect your phone");
+            _form?.RefreshDriver();
+            return true;
+        }
+        var msg = r switch
+        {
+            DriverSetup.Result.Declined => "Setup was cancelled at the Windows permission prompt. Click 'Set up controller driver' to try again.",
+            DriverSetup.Result.Installed => "The driver installed. Restart your PC once, then open TailPad again.",
+            _ => "The driver setup didn't finish. Click 'Set up controller driver' to try again.",
+        };
+        AddLog(msg);
+        MessageBox.Show(msg, "TailPad", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        _form?.RefreshDriver();
+        return false;
     }
 
     void BuildMenu()

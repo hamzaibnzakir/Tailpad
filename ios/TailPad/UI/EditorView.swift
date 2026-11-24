@@ -15,8 +15,9 @@ struct EditorView: View {
     @State private var confirmDiscard = false
     private let original: Layout
 
-    init(layout: Layout) {
+    init(layout: Layout, select: UUID? = nil) {
         _draft = State(initialValue: layout)
+        _selected = State(initialValue: select)
         original = layout
     }
 

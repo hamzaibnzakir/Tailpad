@@ -126,6 +126,20 @@ final class Connection: ObservableObject {
     func requestGames() { queue.async { self.sendJSON(["t": "games"]) } }
     func launch(_ g: PCGame) { queue.async { self.sendJSON(["t": "launch", "id": g.id]) } }
 
+    /// Screenshot/demo mode: pretend we're connected with sample data.
+    func demo() {
+        status = .connected
+        pingMs = 9
+        pcName = "DELL-5540"
+        player = 1
+        foregroundExe = "eldenring.exe"
+        let ids: [(String, String)] = [("1245620", "ELDEN RING"), ("1551360", "Forza Horizon 5"), ("1091500", "Cyberpunk 2077"),
+                                       ("1364780", "Street Fighter 6"), ("1145360", "Hades"), ("252950", "Rocket League")]
+        games = ids.map { PCGame(id: "steam:\($0.0)", name: $0.1, source: "Steam",
+                                 art: URL(string: "https://cdn.cloudflare.steamstatic.com/steam/apps/\($0.0)/header.jpg")) }
+            + [PCGame(id: "custom:1", name: "Dolphin Emulator", source: "PC", art: nil)]
+    }
+
     // MARK: TCP
 
     private func openTCP() {

@@ -13,3 +13,4 @@ ios/Payload/
 DerivedData/
 xcuserdata/
 .DS_Store
+pc/TailPad.Host/Driver/

@@ -4,6 +4,12 @@ using TailPad.Core;
 namespace TailPad.Host;
 
 /// <summary>Main window: pairing QR + code, connected phones, game library, settings, log.</summary>
+public interface IMainHost
+{
+    IReadOnlyList<string> LogLines { get; }
+    bool EnsureDriver(bool askFirst);
+}
+
 sealed class MainForm : Form
 {
     static readonly Color Bg = Color.FromArgb(0x0E, 0x10, 0x14), Panel = Color.FromArgb(0x17, 0x1B, 0x22),
@@ -13,20 +19,22 @@ sealed class MainForm : Form
     readonly HostServer _server;
     readonly WinServices _services;
     readonly ViGEmPadFactory _pads;
-    readonly TrayApp _app;
+    readonly IMainHost _app;
 
     readonly PictureBox _qr = new() { SizeMode = PictureBoxSizeMode.Zoom, Size = new Size(230, 230), BackColor = Color.White };
     readonly Label _code = new() { AutoSize = true, Font = new Font("Segoe UI", 30, FontStyle.Bold), ForeColor = AppIcon.Accent };
     readonly Label _addr = new() { AutoSize = true, Font = new Font("Consolas", 11), ForeColor = Fg };
     readonly Label _driver = new() { AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = Dim };
-    readonly LinkLabel _driverLink = new() { AutoSize = true, Text = "Install the ViGEmBus controller driver", LinkColor = AppIcon.Accent, Visible = false };
+    Button _driverButton = null!;
     readonly ListView _live = MakeList(("Phone", 170), ("Controller", 110), ("Player", 60), ("Address", 140));
     readonly ListView _paired = MakeList(("Phone", 220), ("Last seen", 160));
     readonly ListView _games = MakeList(("Game", 300), ("From", 90));
     readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Panel, ForeColor = Fg, BorderStyle = BorderStyle.None, Font = new Font("Consolas", 9) };
     bool _quitting;
+    TabControl _tabs = null!;
+    public void SelectTab(int i) => _tabs.SelectedIndex = i;
 
-    public MainForm(Config cfg, HostServer server, WinServices services, ViGEmPadFactory pads, TrayApp app, Icon icon)
+    public MainForm(Config cfg, HostServer server, WinServices services, ViGEmPadFactory pads, IMainHost app, Icon icon)
     {
         _cfg = cfg; _server = server; _services = services; _pads = pads; _app = app;
         Text = "TailPad";
@@ -109,15 +117,15 @@ sealed class MainForm : Form
         }));
         row.Controls.Add(MakeButton("Copy address", (_, _) => { var ip = Tailnet.Ip(); if (ip != null) Clipboard.SetText(ip); }));
         p.Controls.Add(row);
-        _driverLink.LinkClicked += (_, _) => TrayApp.OpenUrl("https://github.com/nefarius/ViGEmBus/releases/latest");
         p.Controls.Add(_driver);
-        p.Controls.Add(_driverLink);
+        _driverButton = MakeButton("Set up controller driver", (_, _) => { _app.EnsureDriver(askFirst: false); RefreshDriver(); });
+        p.Controls.Add(_driverButton);
         return p;
     }
 
     Control BuildTabs()
     {
-        var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 5) };
+        var tabs = _tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 5) };
 
         // Phones
         var phones = Page("Phones");
@@ -205,7 +213,7 @@ sealed class MainForm : Form
 
     void RefreshPairing()
     {
-        var ip = Tailnet.Ip();
+        var ip = Tailnet.Override ?? Tailnet.Ip();
         _code.Text = _cfg.PairingCode;
         _addr.Text = ip != null ? $"{ip}:{_cfg.ControlPort}" : "Tailscale not running on this PC";
         _addr.ForeColor = ip != null ? Fg : Color.FromArgb(0xEF, 0x53, 0x50);
@@ -217,10 +225,16 @@ sealed class MainForm : Form
         _qr.Image?.Dispose();
         _qr.Image = Image.FromStream(ms);
 
+        RefreshDriver();
+    }
+
+    public void RefreshDriver()
+    {
+        if (InvokeRequired) { BeginInvoke(RefreshDriver); return; }
         var ok = _pads.TryInit();
-        _driver.Text = ok ? "Controller driver: ready ✓" : "Controller driver missing — games can't see TailPad until it's installed (one time, then restart TailPad).";
+        _driver.Text = ok ? "Controller driver: ready ✓" : "Controller driver not set up yet — games can't see your phone until it is (one click, one time).";
         _driver.ForeColor = ok ? AppIcon.Accent : Color.FromArgb(0xFF, 0xCA, 0x28);
-        _driverLink.Visible = !ok;
+        _driverButton.Visible = !ok;
     }
 
     public void RefreshSessions()

@@ -9,7 +9,18 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if settings.isConfigured {
+            if let demo = model.demo {
+                switch demo.screen {
+                case "connect": ConnectView(firstRun: true)
+                case "menu": MenuView(initialTab: 0)
+                case "games": MenuView(initialTab: 1)
+                case "settings": MenuView(initialTab: 3)
+                case "editor":
+                    EditorView(layout: model.store.active,
+                               select: model.store.active.pages[0].controls.first { $0.kind == .button }?.id)
+                default: PlayView(showMenu: $showMenu)
+                }
+            } else if settings.isConfigured {
                 PlayView(showMenu: $showMenu)
             } else {
                 ConnectView(firstRun: true)

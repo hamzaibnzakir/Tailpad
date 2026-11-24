@@ -13,6 +13,15 @@ final class AppModel: ObservableObject {
     let engine: PadEngine
 
     @Published var toast: String?
+
+    /// Launch arguments used by CI to screenshot each screen: -demoScreen play|editor|menu|games|connect -demoLayout N
+    struct Demo { let screen: String; let layout: Int }
+    let demo: Demo? = {
+        let a = ProcessInfo.processInfo.arguments
+        guard let i = a.firstIndex(of: "-demoScreen"), i + 1 < a.count else { return nil }
+        let l = a.firstIndex(of: "-demoLayout").flatMap { $0 + 1 < a.count ? Int(a[$0 + 1]) : nil } ?? 0
+        return Demo(screen: a[i + 1], layout: l)
+    }()
     private var bag = Set<AnyCancellable>()
 
     init() {
@@ -45,6 +54,11 @@ final class AppModel: ObservableObject {
 
         applySettings()
         apply(store.active)
+
+        if let demo {
+            if store.layouts.indices.contains(demo.layout) { store.activate(store.layouts[demo.layout].id) }
+            if demo.screen != "connect" { connection.demo() }
+        }
     }
 
     private func apply(_ l: Layout) {
@@ -60,6 +74,7 @@ final class AppModel: ObservableObject {
     }
 
     func connect(code: String = "") {
+        if demo != nil { return }
         let host = settings.host.trimmingCharacters(in: .whitespacesAndNewlines)
         connection.connect(host: host, port: settings.port, deviceId: settings.deviceId,
                            token: settings.token(for: host), code: code, padType: store.active.padType)
