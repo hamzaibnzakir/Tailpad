@@ -130,8 +130,8 @@ enum Presets {
             btn(.x, 0.68, 0.43, 0.16, label: "LP"), btn(.y, 0.8, 0.37, 0.16, label: "MP"), btn(.rb, 0.92, 0.43, 0.16, label: "HP"),
             btn(.a, 0.68, 0.75, 0.16, label: "LK"), btn(.b, 0.8, 0.69, 0.16, label: "MK"),
             Control(kind: .button, x: 0.92, y: 0.75, w: 0.16, label: "HK", color: base, action: PadAction(rt: 1)),
-            pill(PadAction(macro: fireball.id), 0.4, 0.12, w: 0.24, label: "Fireball", color: "#3A2A18"),
-            pill(PadAction(macro: uppercut.id), 0.62, 0.12, w: 0.24, label: "Uppercut", color: "#3A2A18"),
+            pill(PadAction(macro: fireball.id), 0.38, 0.24, w: 0.24, label: "Fireball", color: "#3A2A18"),
+            pill(PadAction(macro: uppercut.id), 0.62, 0.24, w: 0.24, label: "Uppercut", color: "#3A2A18"),
             btn(.start, 0.92, 0.1, 0.11, color: shoulder), btn(.back, 0.08, 0.1, 0.11, color: shoulder),
             pill(PadAction(buttons: [.lb]), 0.5, 0.9, w: 0.2, label: "LB"),
         ]
@@ -147,7 +147,7 @@ enum Presets {
             pill(PadAction(buttons: [.rb]), 0.88, 0.1, w: 0.24, label: "R"),
             pill(PadAction(buttons: [.back]), 0.43, 0.88, w: 0.16, h: 0.09, label: "SELECT"),
             pill(PadAction(buttons: [.start]), 0.57, 0.88, w: 0.16, h: 0.09, label: "START"),
-            pill(PadAction(page: 1), 0.5, 0.12, w: 0.18, h: 0.09, label: "More ›", color: "#2A2440"),
+            pill(PadAction(page: 1), 0.5, 0.3, w: 0.18, h: 0.09, label: "More ›", color: "#2A2440"),
         ]
         let extra: [Control] = [
             stick(.left, 0.2, 0.58, 0.5), stick(.right, 0.8, 0.58, 0.5),
@@ -155,7 +155,7 @@ enum Presets {
             pill(PadAction(rt: 1), 0.88, 0.1, w: 0.24, label: "ZR"),
             btn(.ls, 0.42, 0.55, 0.13), btn(.rs, 0.58, 0.55, 0.13),
             btn(.guide, 0.5, 0.82, 0.13, label: "HOME"),
-            pill(PadAction(page: 0), 0.5, 0.12, w: 0.18, h: 0.09, label: "‹ Back", color: "#2A2440"),
+            pill(PadAction(page: 0), 0.5, 0.3, w: 0.18, h: 0.09, label: "‹ Back", color: "#2A2440"),
         ]
         return Layout(name: "Retro / Emulators", pages: [LayoutPage(name: "Main", controls: main), LayoutPage(name: "Extra", controls: extra)])
     }
