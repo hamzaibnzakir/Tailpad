@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TailPad.Core", "TailPad.Core\TailPad.Core.csproj", "{975BE62B-D630-4DE7-9084-DE6D52BC165A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TailPad.Host", "TailPad.Host\TailPad.Host.csproj", "{AB0A1F1B-6CF9-478E-A827-156BA71AE0CA}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TailPad.Tests", "TailPad.Tests\TailPad.Tests.csproj", "{BC9F967C-0816-4996-882D-FE9EDAECC228}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{975BE62B-D630-4DE7-9084-DE6D52BC165A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{975BE62B-D630-4DE7-9084-DE6D52BC165A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{975BE62B-D630-4DE7-9084-DE6D52BC165A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{975BE62B-D630-4DE7-9084-DE6D52BC165A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AB0A1F1B-6CF9-478E-A827-156BA71AE0CA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB0A1F1B-6CF9-478E-A827-156BA71AE0CA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB0A1F1B-6CF9-478E-A827-156BA71AE0CA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB0A1F1B-6CF9-478E-A827-156BA71AE0CA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BC9F967C-0816-4996-882D-FE9EDAECC228}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BC9F967C-0816-4996-882D-FE9EDAECC228}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BC9F967C-0816-4996-882D-FE9EDAECC228}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BC9F967C-0816-4996-882D-FE9EDAECC228}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

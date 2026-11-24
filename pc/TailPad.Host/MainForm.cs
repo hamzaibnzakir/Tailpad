@@ -1,0 +1,285 @@
+using QRCoder;
+using TailPad.Core;
+
+namespace TailPad.Host;
+
+/// <summary>Main window: pairing QR + code, connected phones, game library, settings, log.</summary>
+sealed class MainForm : Form
+{
+    static readonly Color Bg = Color.FromArgb(0x0E, 0x10, 0x14), Panel = Color.FromArgb(0x17, 0x1B, 0x22),
+        Edge = Color.FromArgb(0x2C, 0x32, 0x40), Fg = Color.FromArgb(0xE8, 0xEB, 0xF1), Dim = Color.FromArgb(0x8A, 0x92, 0xA6);
+
+    readonly Config _cfg;
+    readonly HostServer _server;
+    readonly WinServices _services;
+    readonly ViGEmPadFactory _pads;
+    readonly TrayApp _app;
+
+    readonly PictureBox _qr = new() { SizeMode = PictureBoxSizeMode.Zoom, Size = new Size(230, 230), BackColor = Color.White };
+    readonly Label _code = new() { AutoSize = true, Font = new Font("Segoe UI", 30, FontStyle.Bold), ForeColor = AppIcon.Accent };
+    readonly Label _addr = new() { AutoSize = true, Font = new Font("Consolas", 11), ForeColor = Fg };
+    readonly Label _driver = new() { AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = Dim };
+    readonly LinkLabel _driverLink = new() { AutoSize = true, Text = "Install the ViGEmBus controller driver", LinkColor = AppIcon.Accent, Visible = false };
+    readonly ListView _live = MakeList(("Phone", 170), ("Controller", 110), ("Player", 60), ("Address", 140));
+    readonly ListView _paired = MakeList(("Phone", 220), ("Last seen", 160));
+    readonly ListView _games = MakeList(("Game", 300), ("From", 90));
+    readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Panel, ForeColor = Fg, BorderStyle = BorderStyle.None, Font = new Font("Consolas", 9) };
+    bool _quitting;
+
+    public MainForm(Config cfg, HostServer server, WinServices services, ViGEmPadFactory pads, TrayApp app, Icon icon)
+    {
+        _cfg = cfg; _server = server; _services = services; _pads = pads; _app = app;
+        Text = "TailPad";
+        Icon = icon;
+        BackColor = Bg; ForeColor = Fg;
+        Font = new Font("Segoe UI", 9.5f);
+        ClientSize = new Size(940, 560);
+        MinimumSize = new Size(820, 500);
+        StartPosition = FormStartPosition.CenterScreen;
+
+        var root = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, Padding = new Padding(16) };
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 290));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        Controls.Add(root);
+
+        root.Controls.Add(BuildPairPanel(), 0, 0);
+        root.Controls.Add(BuildTabs(), 1, 0);
+
+        RefreshPairing();
+        RefreshSessions();
+        RefreshGames();
+        foreach (var l in app.LogLines) AppendLog(l);
+
+        FormClosing += (_, e) =>
+        {
+            if (_quitting || e.CloseReason != CloseReason.UserClosing) return;
+            e.Cancel = true;
+            Hide();
+        };
+    }
+
+    public new void Close() { _quitting = true; base.Close(); }
+
+    static ListView MakeList(params (string name, int width)[] cols)
+    {
+        var lv = new ListView
+        {
+            View = View.Details, FullRowSelect = true, HeaderStyle = ColumnHeaderStyle.Nonclickable, Dock = DockStyle.Fill,
+            BackColor = Panel, ForeColor = Fg, BorderStyle = BorderStyle.None, MultiSelect = false,
+        };
+        foreach (var (n, w) in cols) lv.Columns.Add(n, w);
+        return lv;
+    }
+
+    static Button MakeButton(string text, EventHandler onClick)
+    {
+        var b = new Button
+        {
+            Text = text, AutoSize = true, FlatStyle = FlatStyle.Flat, BackColor = Panel, ForeColor = Fg,
+            Padding = new Padding(8, 3, 8, 3), Margin = new Padding(0, 6, 8, 0), Cursor = Cursors.Hand,
+        };
+        b.FlatAppearance.BorderColor = Edge;
+        b.Click += onClick;
+        return b;
+    }
+
+    static Label Header(string text) => new()
+    {
+        Text = text, AutoSize = true, Font = new Font("Segoe UI Semibold", 12), ForeColor = Fg, Margin = new Padding(0, 0, 0, 8),
+    };
+
+    Control BuildPairPanel()
+    {
+        var p = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, AutoScroll = true };
+        p.Controls.Add(Header("Connect your iPhone"));
+        p.Controls.Add(new Label
+        {
+            AutoSize = true, MaximumSize = new Size(260, 0), ForeColor = Dim, Margin = new Padding(0, 0, 0, 10),
+            Text = "Turn Tailscale on, then scan this with the iPhone camera — or type the address and code into the TailPad app.",
+        });
+        p.Controls.Add(_qr);
+        p.Controls.Add(new Label { Text = "Pairing code", AutoSize = true, ForeColor = Dim, Margin = new Padding(0, 12, 0, 0) });
+        p.Controls.Add(_code);
+        p.Controls.Add(_addr);
+        var row = new FlowLayoutPanel { AutoSize = true, WrapContents = false, Margin = new Padding(0, 4, 0, 10) };
+        row.Controls.Add(MakeButton("New code", (_, _) =>
+        {
+            lock (_cfg) { _cfg.PairingCode = Config.NewCode(); _cfg.Save(); }
+            RefreshPairing();
+        }));
+        row.Controls.Add(MakeButton("Copy address", (_, _) => { var ip = Tailnet.Ip(); if (ip != null) Clipboard.SetText(ip); }));
+        p.Controls.Add(row);
+        _driverLink.LinkClicked += (_, _) => TrayApp.OpenUrl("https://github.com/nefarius/ViGEmBus/releases/latest");
+        p.Controls.Add(_driver);
+        p.Controls.Add(_driverLink);
+        return p;
+    }
+
+    Control BuildTabs()
+    {
+        var tabs = new TabControl { Dock = DockStyle.Fill, Padding = new Point(14, 5) };
+
+        // Phones
+        var phones = Page("Phones");
+        var pl = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 5, Padding = new Padding(10) };
+        pl.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        pl.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        pl.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        pl.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        pl.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        pl.Controls.Add(Header("Connected now"));
+        pl.Controls.Add(_live);
+        pl.Controls.Add(MakeButton("Disconnect", (_, _) =>
+        {
+            if (_live.SelectedItems.Count == 1 && _live.SelectedItems[0].Tag is uint key) _server.Kick(key);
+        }));
+        var pairedHead = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+        pairedHead.Controls.Add(Header("Paired phones"));
+        pairedHead.Controls.Add(MakeButton("Forget", (_, _) =>
+        {
+            if (_paired.SelectedItems.Count != 1 || _paired.SelectedItems[0].Tag is not string id) return;
+            if (MessageBox.Show("Forget this phone? It will need the pairing code again.", "TailPad", MessageBoxButtons.YesNo) != DialogResult.Yes) return;
+            _server.Forget(id);
+            RefreshSessions();
+        }));
+        pl.Controls.Add(pairedHead);
+        pl.Controls.Add(_paired);
+        phones.Controls.Add(pl);
+        tabs.TabPages.Add(phones);
+
+        // Games
+        var games = Page("Games");
+        var gl = new TableLayoutPanel { Dock = DockStyle.Fill, RowCount = 3, Padding = new Padding(10) };
+        gl.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        gl.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        gl.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        gl.Controls.Add(new Label
+        {
+            AutoSize = true, ForeColor = Dim, MaximumSize = new Size(560, 0),
+            Text = "Steam and Epic games are found automatically. Add anything else (emulators, Xbox app games via their .exe, launchers) here — they show up in the phone's Games tab.",
+        });
+        gl.Controls.Add(_games);
+        var grow = new FlowLayoutPanel { AutoSize = true, WrapContents = false };
+        grow.Controls.Add(MakeButton("Add game…", (_, _) => AddGame()));
+        grow.Controls.Add(MakeButton("Remove", (_, _) => RemoveGame()));
+        grow.Controls.Add(MakeButton("Rescan", (_, _) => { _services.Rescan(); RefreshGames(); }));
+        gl.Controls.Add(grow);
+        games.Controls.Add(gl);
+        tabs.TabPages.Add(games);
+
+        // Settings
+        var settings = Page("Settings");
+        var sl = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(12), WrapContents = false };
+        sl.Controls.Add(Check("Start TailPad when Windows starts", _cfg.StartWithWindows, v =>
+        {
+            _cfg.StartWithWindows = v;
+            try { Autostart.Set(v); } catch (Exception e) { MessageBox.Show(e.Message); }
+        }));
+        sl.Controls.Add(Check("Let gyro / touchpad move the mouse cursor", _cfg.GyroMouse, v => _cfg.GyroMouse = v));
+        sl.Controls.Add(Check("Emulator motion server (DSU on 127.0.0.1:" + _cfg.DsuPort + ") — needs restart", _cfg.DsuEnabled, v => _cfg.DsuEnabled = v));
+        sl.Controls.Add(Check("Also allow phones on the same Wi-Fi (without Tailscale)", _cfg.AllowLan, v => _cfg.AllowLan = v));
+        sl.Controls.Add(new Label
+        {
+            AutoSize = true, ForeColor = Dim, MaximumSize = new Size(560, 0), Margin = new Padding(0, 14, 0, 0),
+            Text = $"Ports: TCP {_cfg.ControlPort} and UDP {_cfg.InputPort}. Windows Firewall may ask the first time — allow Private networks.",
+        });
+        settings.Controls.Add(sl);
+        tabs.TabPages.Add(settings);
+
+        // Log
+        var log = Page("Activity");
+        log.Padding = new Padding(10);
+        log.Controls.Add(_log);
+        tabs.TabPages.Add(log);
+        return tabs;
+    }
+
+    static TabPage Page(string title) => new(title) { BackColor = Bg, ForeColor = Fg };
+
+    CheckBox Check(string text, bool value, Action<bool> set)
+    {
+        var c = new CheckBox { Text = text, Checked = value, AutoSize = true, ForeColor = Fg, Margin = new Padding(0, 6, 0, 6) };
+        c.CheckedChanged += (_, _) => { lock (_cfg) { set(c.Checked); _cfg.Save(); } };
+        return c;
+    }
+
+    void RefreshPairing()
+    {
+        var ip = Tailnet.Ip();
+        _code.Text = _cfg.PairingCode;
+        _addr.Text = ip != null ? $"{ip}:{_cfg.ControlPort}" : "Tailscale not running on this PC";
+        _addr.ForeColor = ip != null ? Fg : Color.FromArgb(0xEF, 0x53, 0x50);
+        var url = $"tailpad://pair?host={ip ?? ""}&port={_cfg.ControlPort}&code={_cfg.PairingCode}&pc={Uri.EscapeDataString(Environment.MachineName)}";
+        using var gen = new QRCodeGenerator();
+        using var data = gen.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
+        var png = new PngByteQRCode(data).GetGraphic(8);
+        using var ms = new MemoryStream(png);
+        _qr.Image?.Dispose();
+        _qr.Image = Image.FromStream(ms);
+
+        var ok = _pads.TryInit();
+        _driver.Text = ok ? "Controller driver: ready ✓" : "Controller driver missing — games can't see TailPad until it's installed (one time, then restart TailPad).";
+        _driver.ForeColor = ok ? AppIcon.Accent : Color.FromArgb(0xFF, 0xCA, 0x28);
+        _driverLink.Visible = !ok;
+    }
+
+    public void RefreshSessions()
+    {
+        if (InvokeRequired) { BeginInvoke(RefreshSessions); return; }
+        _live.BeginUpdate();
+        _live.Items.Clear();
+        foreach (var s in _server.Sessions.OrderBy(s => s.Connected))
+        {
+            var it = new ListViewItem(new[]
+            {
+                s.Name, s.PadType == PadType.DS4 ? "PlayStation" : "Xbox",
+                s.Player > 0 ? s.Player.ToString() : (s.DsuSlot + 1).ToString(), s.Address.ToString(),
+            }) { Tag = s.Key };
+            _live.Items.Add(it);
+        }
+        _live.EndUpdate();
+
+        _paired.BeginUpdate();
+        _paired.Items.Clear();
+        List<PairedDevice> devs;
+        lock (_cfg) devs = _cfg.Devices.ToList();
+        foreach (var d in devs.OrderByDescending(d => d.LastSeen))
+            _paired.Items.Add(new ListViewItem(new[] { d.Name, d.LastSeen.ToString("g") }) { Tag = d.Id });
+        _paired.EndUpdate();
+    }
+
+    void RefreshGames()
+    {
+        _games.BeginUpdate();
+        _games.Items.Clear();
+        foreach (var g in _services.Games())
+            _games.Items.Add(new ListViewItem(new[] { g.Name, g.Source }) { Tag = g });
+        _games.EndUpdate();
+    }
+
+    void AddGame()
+    {
+        using var dlg = new OpenFileDialog { Filter = "Programs (*.exe;*.lnk;*.url;*.bat)|*.exe;*.lnk;*.url;*.bat|All files|*.*", Title = "Pick a game or launcher" };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        var name = Path.GetFileNameWithoutExtension(dlg.FileName);
+        lock (_cfg) { _cfg.CustomGames.Add(new CustomGame { Name = name, Path = dlg.FileName }); _cfg.Save(); }
+        _services.Rescan();
+        RefreshGames();
+    }
+
+    void RemoveGame()
+    {
+        if (_games.SelectedItems.Count != 1 || _games.SelectedItems[0].Tag is not GameEntry g) return;
+        if (g.Source != "PC") { MessageBox.Show("Steam and Epic games are listed automatically — uninstall them in their launcher to hide them.", "TailPad"); return; }
+        var path = g.Target.Split('\0')[0];
+        lock (_cfg) { _cfg.CustomGames.RemoveAll(c => c.Path == path); _cfg.Save(); }
+        _services.Rescan();
+        RefreshGames();
+    }
+
+    public void AppendLog(string line)
+    {
+        if (IsDisposed) return;
+        _log.AppendText(line + Environment.NewLine);
+    }
+}

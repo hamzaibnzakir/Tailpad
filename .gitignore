@@ -1,0 +1,15 @@
+# .NET
+bin/
+obj/
+out/
+*.user
+.vs/
+TestResults/
+# Xcode / iOS
+ios/*.xcodeproj
+ios/build/
+ios/Payload/
+*.ipa
+DerivedData/
+xcuserdata/
+.DS_Store
