@@ -31,14 +31,17 @@ sealed class MainForm : Form
     readonly ListView _games = MakeList(("Game", 300), ("From", 90));
     readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Panel, ForeColor = Fg, BorderStyle = BorderStyle.None, Font = new Font("Consolas", 9) };
     bool _quitting;
+    readonly BackgroundPlay? _bg;
+    readonly Label _hiddenStatus = new() { AutoSize = true, MaximumSize = new Size(560, 0), Margin = new Padding(0, 4, 0, 0) };
+    Button _hiddenSetup = null!;
     Button _scanButton = null!, _unhide = null!;
     readonly Label _scanStatus = new() { AutoSize = true, ForeColor = Color.FromArgb(0x8A, 0x92, 0xA6) };
     TabControl _tabs = null!;
     public void SelectTab(int i) => _tabs.SelectedIndex = i;
 
-    public MainForm(Config cfg, HostServer server, WinServices services, ViGEmPadFactory pads, IMainHost app, Icon icon)
+    public MainForm(Config cfg, HostServer server, WinServices services, ViGEmPadFactory pads, IMainHost app, Icon icon, BackgroundPlay? bg = null)
     {
-        _cfg = cfg; _server = server; _services = services; _pads = pads; _app = app;
+        _cfg = cfg; _server = server; _services = services; _pads = pads; _app = app; _bg = bg;
         Text = "TailPad";
         Icon = icon;
         BackColor = Bg; ForeColor = Fg;
@@ -193,6 +196,19 @@ sealed class MainForm : Form
         sl.Controls.Add(Check("Let gyro / touchpad move the mouse cursor", _cfg.GyroMouse, v => _cfg.GyroMouse = v));
         sl.Controls.Add(Check("Emulator motion server (DSU on 127.0.0.1:" + _cfg.DsuPort + ") — needs restart", _cfg.DsuEnabled, v => _cfg.DsuEnabled = v));
         sl.Controls.Add(Check("Also allow phones on the same Wi-Fi (without Tailscale)", _cfg.AllowLan, v => _cfg.AllowLan = v));
+        sl.Controls.Add(new Label { Text = "Background play", AutoSize = true, Font = new Font("Segoe UI Semibold", 11), ForeColor = Fg, Margin = new Padding(0, 16, 0, 0) });
+        sl.Controls.Add(new Label
+        {
+            AutoSize = true, ForeColor = Dim, MaximumSize = new Size(560, 0),
+            Text = "Play on your phone while you use the PC: the game runs on a hidden screen only your phone sees. Start it from the phone's Games tab, or use “Move game to hidden screen” in the tray menu.",
+        });
+        sl.Controls.Add(_hiddenStatus);
+        _hiddenSetup = MakeButton("Set up hidden screen", (_, _) => { _bg?.Setup(); });
+        sl.Controls.Add(_hiddenSetup);
+        RefreshHidden();
+        var hiddenTimer = new System.Windows.Forms.Timer { Interval = 2000 };
+        hiddenTimer.Tick += (_, _) => RefreshHidden();
+        hiddenTimer.Start();
         sl.Controls.Add(new Label
         {
             AutoSize = true, ForeColor = Dim, MaximumSize = new Size(560, 0), Margin = new Padding(0, 14, 0, 0),
@@ -233,6 +249,16 @@ sealed class MainForm : Form
         _qr.Image = Image.FromStream(ms);
 
         RefreshDriver();
+    }
+
+    void RefreshHidden()
+    {
+        bool ready = _bg?.Available == true;
+        _hiddenStatus.Text = _bg == null ? "Not available in this mode." :
+            _bg.Active ? $"Playing {_bg.GameName} on the hidden screen ✓" :
+            ready ? "Hidden screen: ready ✓" : "Hidden screen not set up yet (one click, one Windows prompt).";
+        _hiddenStatus.ForeColor = ready ? AppIcon.Accent : Color.FromArgb(0xFF, 0xCA, 0x28);
+        _hiddenSetup.Visible = _bg != null && !ready;
     }
 
     public void RefreshDriver()

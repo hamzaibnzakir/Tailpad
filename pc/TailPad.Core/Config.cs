@@ -41,6 +41,8 @@ public sealed class Config
     public DateTime LastScan { get; set; }
     /// <summary>game ids the user removed from the list</summary>
     public List<string> HiddenGames { get; set; } = new();
+    /// <summary>games TailPad turned down on the PC during background play (restored on exit / after a crash)</summary>
+    public List<string> DuckedApps { get; set; } = new();
 
     static readonly JsonSerializerOptions Json = new() { WriteIndented = true };
     static readonly object Gate = new();

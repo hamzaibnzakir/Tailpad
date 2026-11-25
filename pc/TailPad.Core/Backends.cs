@@ -32,6 +32,9 @@ public interface IHostServices
     /// <summary>Start remote play: send packets with <paramref name="send"/>, report state with <paramref name="status"/>.
     /// Dispose the result to stop.</summary>
     IDisposable StartStream(StreamRequest request, Action<byte[]> send, Action<System.Text.Json.Nodes.JsonObject> status);
+
+    /// <summary>Games on a hidden screen only the phone sees.</summary>
+    IBackgroundPlay Background { get; }
 }
 
 public sealed record StreamRequest(int Height = 720, int Fps = 60, int Kbps = 10_000, bool Audio = true);

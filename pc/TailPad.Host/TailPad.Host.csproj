@@ -32,6 +32,10 @@
   <ItemGroup Condition="Exists('Engine\ffmpeg.exe')">
     <EmbeddedResource Include="Engine\ffmpeg.exe" LogicalName="ffmpeg.exe" />
   </ItemGroup>
+  <!-- Hidden screen for background play (Virtual Display Driver, MIT, signed; downloaded by CI / scripts/get-display-driver.sh) -->
+  <ItemGroup Condition="Exists('Driver\VirtualDisplayDriver.zip')">
+    <EmbeddedResource Include="Driver\VirtualDisplayDriver.zip" LogicalName="VirtualDisplayDriver.zip" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\TailPad.Core\TailPad.Core.csproj" />
   </ItemGroup>

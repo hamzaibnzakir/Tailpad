@@ -19,9 +19,11 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: "8.0.x"
-      - name: Bundle controller driver
+      - name: Bundle controller driver + hidden-screen driver
         shell: bash
-        run: scripts/get-driver.sh
+        run: |
+          scripts/get-driver.sh
+          scripts/get-display-driver.sh
       - name: Bundle video engine (FFmpeg LGPL)
         shell: pwsh
         run: scripts/get-ffmpeg.ps1
@@ -44,6 +46,15 @@ jobs:
           New-Item -ItemType Directory -Force shots | Out-Null
           Start-Process -FilePath out/TailPad.exe -ArgumentList '--screenshot', "$PWD\shots" -Wait
           Get-ChildItem shots
+      - name: Hidden screen end-to-end (install driver, move a window, capture it)
+        id: hidden
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $p = Start-Process -FilePath out/TailPad.exe -ArgumentList '--selftest-hidden', "$PWD\shots" -Wait -PassThru
+          Get-Content shots/hidden-screen-report.txt
+          if (Test-Path "$env:ProgramData\TailPad\HiddenScreen\setup-error.txt") { Get-Content "$env:ProgramData\TailPad\HiddenScreen\setup-error.txt" }
+          exit $p.ExitCode
       - uses: actions/upload-artifact@v4
         with:
           name: TailPad-Windows
@@ -51,7 +62,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: Screenshots-PC
-          path: shots/*.png
+          path: |
+            shots/*.png
+            shots/*.txt
 
   ios:
     name: iPhone app (TailPad.ipa, unsigned for Sideloadly)

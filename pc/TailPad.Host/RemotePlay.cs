@@ -65,7 +65,7 @@ static class VideoEngine
 }
 
 /// <summary>Which window (and where on which monitor) we're streaming.</summary>
-readonly record struct CaptureTarget(IntPtr Hwnd, int Output, int X, int Y, int W, int H, string Name, int DesktopX = 0, int DesktopY = 0)
+readonly record struct CaptureTarget(IntPtr Hwnd, int Output, int X, int Y, int W, int H, string Name, int DesktopX = 0, int DesktopY = 0, bool Hidden = false)
 {
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
@@ -119,14 +119,19 @@ readonly record struct CaptureTarget(IntPtr Hwnd, int Output, int X, int Y, int 
         return new CaptureTarget(h, Math.Max(0, Array.IndexOf(Screen.AllScreens, screen)), x - b.Left, y - b.Top, w, hh, name, x, y);
     }
 
+    /// <summary>The whole hidden screen (background play).</summary>
+    public static CaptureTarget ForHidden(Rectangle area, string name) =>
+        new(IntPtr.Zero, 0, 0, 0, area.Width & ~1, area.Height & ~1, name, area.X, area.Y, Hidden: true);
+
     public (string[] input, string? filter) Input(StreamRequest r, bool gpu) =>
-        gpu ? Capture.Gpu(Output, X, Y, W, H, r) : Capture.Gdi(DesktopX, DesktopY, W, H, r);
+        // the hidden screen isn't one of the GPU's own outputs, so capture it by its desktop position
+        gpu && !Hidden ? Capture.Gpu(Output, X, Y, W, H, r) : Capture.Gdi(DesktopX, DesktopY, W, H, r);
 }
 
 /// <summary>Captures what the PC is playing (WASAPI loopback), encodes 10 ms Opus packets.</summary>
 sealed class GameAudio : IDisposable
 {
-    readonly WasapiLoopbackCapture _cap;
+    readonly IWaveIn _cap;
     readonly IOpusEncoder _enc;
     readonly Action<byte[]> _send;
     readonly Stopwatch _clock;
@@ -137,7 +142,8 @@ sealed class GameAudio : IDisposable
     double _resamplePos;
     float _lastL, _lastR;
 
-    public GameAudio(Action<byte[]> send, Stopwatch clock)
+    /// <param name="source">what to capture; null = everything the PC plays</param>
+    public GameAudio(Action<byte[]> send, Stopwatch clock, IWaveIn? source = null)
     {
         _send = send;
         _clock = clock;
@@ -145,7 +151,7 @@ sealed class GameAudio : IDisposable
         _enc.Bitrate = 128_000;
         _enc.Complexity = 5;
         _enc.UseInbandFEC = false;
-        _cap = new WasapiLoopbackCapture();
+        _cap = source ?? new WasapiLoopbackCapture();
         _cap.DataAvailable += OnData;
         _cap.StartRecording();
     }
@@ -230,20 +236,54 @@ sealed class RemotePlaySession : IDisposable
     int _failures;
     bool _disposed;
     bool _gpuCapture = true;
+    readonly BackgroundPlay? _bg;
+    ProcessLoopbackCapture? _gameSound;
+    int _audioPid = -1;
 
-    public RemotePlaySession(StreamRequest req, Action<byte[]> send, Action<JsonObject> status)
+    public RemotePlaySession(StreamRequest req, Action<byte[]> send, Action<JsonObject> status, BackgroundPlay? bg = null)
     {
-        _req = req; _send = send; _status = status;
+        _req = req; _send = send; _status = status; _bg = bg;
         _ffmpeg = VideoEngine.Path();
         _encoder = VideoEngine.Encoder();
-        _target = CaptureTarget.Current();
+        _target = Pick();
         StartVideo();
-        if (req.Audio)
-        {
-            try { _audio = new GameAudio(send, _clock); }
-            catch (Exception e) { status(new JsonObject { ["state"] = "info", ["msg"] = "No game audio: " + e.Message }); }
-        }
+        UpdateAudio();
         _watch = new System.Threading.Timer(_ => Tick(), null, 1000, 1000);
+    }
+
+    /// <summary>Background play → the hidden screen; otherwise the focused game window.</summary>
+    CaptureTarget Pick() =>
+        _bg?.Area is { } area ? CaptureTarget.ForHidden(area, _bg.GameName ?? "Game") : CaptureTarget.Current();
+
+    /// <summary>Background play → only the game's sound (boosted back to full); otherwise everything the PC plays.</summary>
+    void UpdateAudio()
+    {
+        if (!_req.Audio) return;
+        int pid = _bg?.Active == true ? _bg.GamePid : 0;
+        if (_gameSound != null) _gameSound.Gain = Placement.CompensationGain(_bg?.PcVolume ?? 1f);
+        if (pid == _audioPid) return;
+        lock (_gate)
+        {
+            if (_disposed) return;
+            _audio?.Dispose(); _audio = null; _gameSound = null;
+            _audioPid = pid;
+            if (pid != 0)
+            {
+                try
+                {
+                    _gameSound = new ProcessLoopbackCapture(pid) { Gain = Placement.CompensationGain(_bg!.PcVolume) };
+                    _audio = new GameAudio(_send, _clock, _gameSound);
+                    return;
+                }
+                catch (Exception e)
+                {
+                    _gameSound = null;
+                    _status(new JsonObject { ["state"] = "info", ["msg"] = "Sending all PC sound (game-only sound isn't available: " + e.Message + ")" });
+                }
+            }
+            try { _audio = new GameAudio(_send, _clock); }
+            catch (Exception e) { _status(new JsonObject { ["state"] = "info", ["msg"] = "No game audio: " + e.Message }); }
+        }
     }
 
     void StartVideo()
@@ -285,20 +325,26 @@ sealed class RemotePlaySession : IDisposable
             return;
         }
         Thread.Sleep(300);
-        _target = CaptureTarget.Current();
+        _target = Pick();
         StartVideo();
     }
 
     void Tick()
     {
         if (_disposed) return;
-        // follow the game: re-aim when another real window takes focus, or this one moves/resizes
-        var now = CaptureTarget.Current();
-        if (now != _target && (now.Hwnd != IntPtr.Zero || _target.Hwnd == IntPtr.Zero || !IsAlive(_target)))
+        // follow the game: the hidden screen during background play; otherwise re-aim when another real window
+        // takes focus, or this one moves/resizes
+        var now = Pick();
+        if (now.Hidden || _target.Hidden)
+        {
+            if (now != _target) { _target = now; StartVideo(); }
+        }
+        else if (now != _target && (now.Hwnd != IntPtr.Zero || _target.Hwnd == IntPtr.Zero || !IsAlive(_target)))
         {
             _target = now;
             StartVideo();
         }
+        UpdateAudio();
         var v = _video;
         if (v == null) return;
         int f = v.Frames; long b = v.Bytes;

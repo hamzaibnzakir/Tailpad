@@ -49,6 +49,21 @@ sealed class FakeHost : IHostServices
         return new Stopper(() => StreamSend = null);
     }
     sealed class Stopper(Action a) : IDisposable { public void Dispose() => a(); }
+    public FakeBackground Bg { get; } = new();
+    public IBackgroundPlay Background => Bg;
+}
+
+sealed class FakeBackground : IBackgroundPlay
+{
+    public bool Available { get; set; } = true;
+    public bool Active { get; set; }
+    public string? GameName { get; set; }
+    public readonly List<string> Calls = new();
+    public event Action<JsonObject>? Changed;
+    public void Launch(GameEntry g) { Calls.Add("launch:" + g.Id); Active = true; GameName = g.Name; Changed?.Invoke(BackgroundStatus.On(g.Name)); }
+    public void MoveCurrent() { Calls.Add("move"); Active = true; GameName = "Moved"; Changed?.Invoke(BackgroundStatus.On("Moved")); }
+    public void BringBack() { Calls.Add("back"); Active = false; GameName = null; Changed?.Invoke(BackgroundStatus.Off()); }
+    public void Setup() { Calls.Add("setup"); }
 }
 
 sealed class FakePhone : IDisposable

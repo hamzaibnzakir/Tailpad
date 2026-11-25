@@ -22,7 +22,14 @@ public sealed class WinServices : IHostServices
     public void Notify(string message) => _notify(message);
 
     public IDisposable StartStream(StreamRequest request, Action<byte[]> send, Action<System.Text.Json.Nodes.JsonObject> status)
-        => new RemotePlaySession(request, send, status);
+        => new RemotePlaySession(request, send, status, _bg);
+
+    BackgroundPlay? _bg;
+    public IBackgroundPlay Background => (IBackgroundPlay?)_bg ?? _none;
+    readonly NoBackgroundPlay _none = new();
+
+    /// <summary>Turn on background play (Windows only; done by the tray app at startup).</summary>
+    internal BackgroundPlay EnableBackground() => _bg ??= new BackgroundPlay(_cfg, this);
 
     public IReadOnlyList<GameEntry> Games()
     {

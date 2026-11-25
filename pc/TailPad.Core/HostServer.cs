@@ -31,6 +31,11 @@ public sealed class HostServer : IDisposable
     public HostServer(Config cfg, IPadFactory pads, IHostServices host)
     {
         _cfg = cfg; _pads = pads; _host = host;
+        _host.Background.Changed += msg =>
+        {
+            foreach (var s in _byKey.Values) s.Send(msg.DeepClone());
+            if (msg["msg"] is JsonValue m && m.TryGetValue(out string? text)) Log?.Invoke(text ?? "");
+        };
     }
 
     public IReadOnlyCollection<Session> Sessions => _byKey.Values.ToList();
@@ -246,6 +251,7 @@ public sealed class HostServer : IDisposable
             ["player"] = session.DsuSlot + 1, ["pad"] = type == PadType.DS4 ? "ds4" : "x360",
         });
         if (_fg.exe.Length > 0) session.Send(new JsonObject { ["t"] = "fg", ["exe"] = _fg.exe, ["title"] = _fg.title });
+        if (_host.Background.Active) session.Send(BackgroundStatus.On(_host.Background.GameName ?? "Game"));
         Log?.Invoke($"{name} connected ({ip}) as {(type == PadType.DS4 ? "PlayStation" : "Xbox")} controller");
         SessionsChanged?.Invoke();
         return session;
@@ -334,6 +340,34 @@ public sealed class HostServer : IDisposable
                     }
                     break;
                 }
+            case "bg":
+                {
+                    var bg = _host.Background;
+                    switch (S("action"))
+                    {
+                        case "launch":
+                            var g = _host.Games().FirstOrDefault(x => x.Id == S("id"));
+                            if (g == null) { s.Send(BackgroundStatus.Error("Game not found")); break; }
+                            if (!bg.Available) { s.Send(BackgroundStatus.NeedsSetup()); bg.Setup(); break; }
+                            Log?.Invoke($"{s.Name} started {g.Name} on the hidden screen");
+                            bg.Launch(g);
+                            break;
+                        case "move":
+                            if (!bg.Available) { s.Send(BackgroundStatus.NeedsSetup()); bg.Setup(); break; }
+                            bg.MoveCurrent();
+                            break;
+                        case "back":
+                            bg.BringBack();
+                            break;
+                        case "setup":
+                            bg.Setup();
+                            break;
+                        default:
+                            s.Send(bg.Active ? BackgroundStatus.On(bg.GameName ?? "Game") : BackgroundStatus.Off());
+                            break;
+                    }
+                    break;
+                }
             case "bye":
                 return false;
         }
@@ -355,7 +389,8 @@ public sealed class HostServer : IDisposable
             if (!Norm(r.RemoteEndPoint.Address).Equals(s.Address)) continue; // key must come from the paired phone
             s.UdpEndpoint = r.RemoteEndPoint;
             if (!s.Accept(p)) continue;
-            if (_cfg.GyroMouse && (p.MouseDx != 0 || p.MouseDy != 0))
+            // in background play the PC's mouse belongs to whoever is using the PC
+            if (_cfg.GyroMouse && !_host.Background.Active && (p.MouseDx != 0 || p.MouseDy != 0))
                 try { _host.MoveMouse(p.MouseDx, p.MouseDy); } catch { }
         }
     }

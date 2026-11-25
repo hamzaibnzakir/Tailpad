@@ -15,6 +15,7 @@ sealed class TrayApp : ApplicationContext, IMainHost
     readonly Icon _iconIdle = AppIcon.Make(false), _iconOn = AppIcon.Make(true);
     readonly SynchronizationContext _ui;
     MainForm? _form;
+    readonly BackgroundPlay _bg;
     readonly List<string> _log = new();
 
     public TrayApp(bool startHidden)
@@ -22,6 +23,7 @@ sealed class TrayApp : ApplicationContext, IMainHost
         _ui = SynchronizationContext.Current ?? new WindowsFormsSynchronizationContext();
         _cfg = Config.Load();
         _services = new WinServices(_cfg, msg => Balloon(msg));
+        _bg = _services.EnableBackground();
         _server = new HostServer(_cfg, _pads, _services);
         _server.Log += AddLog;
         _server.SessionsChanged += () => _ui.Post(_ => RefreshTray(), null);
@@ -101,8 +103,23 @@ sealed class TrayApp : ApplicationContext, IMainHost
         var status = new ToolStripMenuItem("No phones connected") { Enabled = false, Name = "status" };
         menu.Items.Add(status);
         menu.Items.Add(new ToolStripSeparator());
+        var hide = new ToolStripMenuItem("Move game to hidden screen", null, (_, _) =>
+        {
+            if (!_bg.Available) { _bg.Setup(); return; }
+            _bg.MoveCurrent();
+        });
+        var back = new ToolStripMenuItem("Bring game back to this screen", null, (_, _) => _bg.BringBack());
+        menu.Items.Add(hide);
+        menu.Items.Add(back);
+        menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Quit", null, (_, _) => Quit());
-        menu.Opening += (_, _) => status.Text = StatusText();
+        menu.Opening += (_, _) =>
+        {
+            status.Text = StatusText();
+            hide.Enabled = !_bg.Active;
+            back.Enabled = _bg.Active;
+            back.Text = _bg.Active ? $"Bring {_bg.GameName} back to this screen" : "Bring game back to this screen";
+        };
         _tray.ContextMenuStrip = menu;
     }
 
@@ -135,7 +152,7 @@ sealed class TrayApp : ApplicationContext, IMainHost
     {
         if (_form == null || _form.IsDisposed)
         {
-            _form = new MainForm(_cfg, _server, _services, _pads, this, _iconOn);
+            _form = new MainForm(_cfg, _server, _services, _pads, this, _iconOn, _bg);
             _form.FormClosed += (_, _) => _form = null;
         }
         _form.Show();
@@ -152,6 +169,7 @@ sealed class TrayApp : ApplicationContext, IMainHost
     {
         _tray.Visible = false;
         _fg.Dispose();
+        _bg.Dispose(); // game back on the real screen, hidden screen off, volume restored
         _server.Dispose();
         _pads.Dispose();
         _form?.Close();
