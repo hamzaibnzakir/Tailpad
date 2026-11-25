@@ -77,7 +77,7 @@ public class BackgroundServerTests : IDisposable
 
     public BackgroundServerTests()
     {
-        var p = 51200 + Random.Shared.Next(0, 300) * 3;
+        var p = Ports.FreeBlock();
         _cfg = new Config { ControlPort = p, InputPort = p + 1, DsuEnabled = false, PairingCode = "333444",
                             SavePath = Path.Combine(Path.GetTempPath(), $"tp-{Guid.NewGuid():N}.json") };
         _server = new HostServer(_cfg, new FakeFactory(), _host);

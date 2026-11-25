@@ -127,7 +127,6 @@ sealed class FakePhone : IDisposable
 
 public class ServerTests : IDisposable
 {
-    static int _port = 48800 + Random.Shared.Next(0, 500) * 2;
     readonly string _cfgPath = Path.Combine(Path.GetTempPath(), $"tp-{Guid.NewGuid():N}.json");
     readonly Config _cfg;
     readonly FakeFactory _pads = new();
@@ -136,7 +135,7 @@ public class ServerTests : IDisposable
 
     public ServerTests()
     {
-        var p = Interlocked.Add(ref _port, 3);
+        var p = Ports.FreeBlock();
         _cfg = new Config { ControlPort = p, InputPort = p + 1, DsuPort = p + 2, PairingCode = "123456", SavePath = _cfgPath };
         // keep test config out of the real AppData
         Environment.SetEnvironmentVariable("XDG_CONFIG_HOME", Path.GetTempPath());

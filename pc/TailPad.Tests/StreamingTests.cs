@@ -100,7 +100,7 @@ public class StreamControlTests : IDisposable
 
     public StreamControlTests()
     {
-        var p = 49900 + Random.Shared.Next(0, 300) * 3;
+        var p = Ports.FreeBlock();
         _cfg = new Config { ControlPort = p, InputPort = p + 1, DsuEnabled = false, PairingCode = "111222",
                             SavePath = Path.Combine(Path.GetTempPath(), $"tp-{Guid.NewGuid():N}.json") };
         _server = new HostServer(_cfg, new FakeFactory(), _host);
