@@ -348,12 +348,12 @@ public sealed class HostServer : IDisposable
                         case "launch":
                             var g = _host.Games().FirstOrDefault(x => x.Id == S("id"));
                             if (g == null) { s.Send(BackgroundStatus.Error("Game not found")); break; }
-                            if (!bg.Available) { s.Send(BackgroundStatus.NeedsSetup()); bg.Setup(); break; }
+                            if (!bg.Available) { bg.Setup(); s.Send(BackgroundStatus.NeedsSetup()); break; }
                             Log?.Invoke($"{s.Name} started {g.Name} on the hidden screen");
                             bg.Launch(g);
                             break;
                         case "move":
-                            if (!bg.Available) { s.Send(BackgroundStatus.NeedsSetup()); bg.Setup(); break; }
+                            if (!bg.Available) { bg.Setup(); s.Send(BackgroundStatus.NeedsSetup()); break; }
                             bg.MoveCurrent();
                             break;
                         case "back":

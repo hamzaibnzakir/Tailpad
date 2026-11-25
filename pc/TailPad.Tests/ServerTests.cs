@@ -19,7 +19,8 @@ sealed class FakePad : IVirtualPad
     public event Action<byte, byte>? Rumble;
     public event Action<byte, byte, byte>? Light;
     public event Action<int>? Player;
-    public void Submit(in PadState s, in MotionSample m) { Last = s; LastMotion = m; Submits++; }
+    public readonly List<uint> History = new();
+    public void Submit(in PadState s, in MotionSample m) { Last = s; LastMotion = m; Submits++; lock (History) History.Add(s.Buttons); }
     public void Reset() => Last = default;
     public void Dispose() => Disposed = true;
     public void FireRumble(byte l, byte s) => Rumble?.Invoke(l, s);
@@ -240,7 +241,6 @@ public class ServerTests : IDisposable
         using var phone = new FakePhone();
         await phone.Hello(_cfg.ControlPort, "dev-5", code: "123456");
         var pad = _pads.Pads.Last();
-        var seen = new List<uint>();
         var steps = new JsonArray
         {
             new JsonObject { ["b"] = 1 << Btn.Down, ["ms"] = 60 },
@@ -248,9 +248,10 @@ public class ServerTests : IDisposable
             new JsonObject { ["b"] = 1 << Btn.X, ["ms"] = 60 },
         };
         await phone.Send(new JsonObject { ["t"] = "macro", ["id"] = "hadouken", ["steps"] = steps });
-        var end = DateTime.UtcNow.AddMilliseconds(400);
-        while (DateTime.UtcNow < end) { var b = pad.Last.Buttons; if (seen.Count == 0 || seen[^1] != b) seen.Add(b); await Task.Delay(5); }
-        var order = seen.Where(b => b != 0).ToList();
+        // every state the virtual pad was given, in order (no sampling → no misses on a busy machine)
+        await Until(() => { lock (pad.History) return pad.History.Contains(1u << Btn.X) && pad.History[^1] == 0; }, 5000);
+        List<uint> order;
+        lock (pad.History) order = pad.History.Where(b => b != 0).Distinct().ToList();
         Assert.Equal(new uint[] { 1u << Btn.Down, 1u << Btn.Right, 1u << Btn.X }, order);
         Assert.Equal(0u, pad.Last.Buttons);
     }
