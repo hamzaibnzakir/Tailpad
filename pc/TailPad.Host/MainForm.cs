@@ -34,7 +34,7 @@ sealed class MainForm : Form
     bool _quitting;
     readonly BackgroundPlay? _bg;
     readonly Label _hiddenStatus = new() { AutoSize = true, MaximumSize = new Size(560, 0), Margin = new Padding(0, 4, 0, 0) };
-    Button _hiddenSetup = null!;
+    Button _hiddenSetup = null!, _hiddenRepair = null!;
     Button _scanButton = null!, _unhide = null!;
     readonly Label _scanStatus = new() { AutoSize = true, ForeColor = Color.FromArgb(0x8A, 0x92, 0xA6) };
     TabControl _tabs = null!;
@@ -207,6 +207,8 @@ sealed class MainForm : Form
         sl.Controls.Add(_hiddenStatus);
         _hiddenSetup = MakeButton("Set up hidden screen", (_, _) => { _bg?.Setup(); });
         sl.Controls.Add(_hiddenSetup);
+        _hiddenRepair = MakeButton("Repair hidden screen", (_, _) => { _bg?.Setup(repair: true); });
+        sl.Controls.Add(_hiddenRepair);
         sl.Controls.Add(Check("Run TailPad as administrator (needed for games like GTA V that run as administrator)", _cfg.RunAsAdmin, v =>
         {
             _cfg.RunAsAdmin = v;
@@ -270,6 +272,7 @@ sealed class MainForm : Form
             ready ? "Hidden screen: ready ✓" : "Hidden screen not set up yet (one click, one Windows prompt).";
         _hiddenStatus.ForeColor = ready ? AppIcon.Accent : Color.FromArgb(0xFF, 0xCA, 0x28);
         _hiddenSetup.Visible = _bg != null && !ready;
+        _hiddenRepair.Visible = _bg != null && ready && !_bg.Active;
     }
 
     public void RefreshDriver()

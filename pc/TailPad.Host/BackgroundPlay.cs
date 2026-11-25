@@ -33,6 +33,7 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
         // tidy up after a crash: no stray hidden screen, no game left turned down
         try { GameVolumeDuck.RecoverAfterCrash(cfg); } catch { }
         try { if (HiddenScreen.Installed) HiddenScreen.Off(); } catch { }
+        HiddenScreen.Log = Note;
         _tick = new System.Threading.Timer(_ => Tick(), null, 1000, 1000);
     }
 
@@ -55,7 +56,10 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
 
     void Note(string line) { try { Log?.Invoke("Background play: " + line); } catch { } }
 
-    public void Setup()
+    public void Setup() => Setup(repair: false);
+
+    /// <summary>Install the hidden screen, or reinstall it when it's there but not working.</summary>
+    public void Setup(bool repair)
     {
         if (_busy) return;
         _busy = true;
@@ -63,7 +67,7 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
         {
             try
             {
-                if (HiddenScreen.SetupWithPrompt())
+                if (HiddenScreen.SetupWithPrompt(repair))
                     Say(BackgroundStatus.Make("ready", null, "Hidden screen ready — pick a game to play in the background"));
                 else
                     Say(BackgroundStatus.Error("Hidden screen setup was cancelled on the PC"));

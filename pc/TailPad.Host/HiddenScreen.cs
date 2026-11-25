@@ -94,6 +94,13 @@ static class HiddenScreen
         }
     }
 
+    /// <summary>Where background-play steps are written (the Activity log on the PC).</summary>
+    public static Action<string>? Log;
+    static void Note(string line) { try { Log?.Invoke(line); } catch { } }
+
+    [DllImport("user32.dll")] static extern int SetDisplayConfig(uint numPaths, IntPtr paths, uint numModes, IntPtr modes, uint flags);
+    const uint SDC_TOPOLOGY_EXTEND = 0x4, SDC_APPLY = 0x80;
+
     /// <summary>Switch the hidden screen on, diagonally off the corner of the real desktop.</summary>
     public static Rectangle On()
     {
@@ -105,22 +112,100 @@ static class HiddenScreen
         if (f.attached && Bounds is { } existing && existing.X == x && existing.Y == y && existing.Width == Width && existing.Height == Height)
             return existing;
 
-        var dm = NewDevMode();
-        EnumDisplaySettings(f.name, ENUM_REGISTRY_SETTINGS, ref dm);
-        dm.dmSize = (short)Marshal.SizeOf<DEVMODE>();
-        dm.dmFields = DM_POSITION | DM_PELSWIDTH | DM_PELSHEIGHT | DM_DISPLAYFREQUENCY | DM_BITSPERPEL;
-        dm.dmPositionX = x; dm.dmPositionY = y;
-        dm.dmPelsWidth = Width; dm.dmPelsHeight = Height; dm.dmDisplayFrequency = Hz; dm.dmBitsPerPel = 32;
-        Check(ChangeDisplaySettingsEx(f.name, ref dm, IntPtr.Zero, CDS_UPDATEREGISTRY | CDS_NORESET, IntPtr.Zero), "turn on the hidden screen");
-        Check(ApplyDisplaySettings(null, IntPtr.Zero, IntPtr.Zero, 0, IntPtr.Zero), "apply display settings");
+        var modes = Modes(f.name);
+        bool monitor = HasMonitor(f.name);
+        Note($"hidden screen {f.name}: {(f.attached ? "on" : "off")}, monitor {(monitor ? "present" : "missing")}, " +
+             $"modes {(modes.Count == 0 ? "none" : string.Join(" ", modes.Take(8).Select(m => $"{m.w}x{m.h}@{m.hz}")))}");
+        if (!monitor)
+            throw new InvalidOperationException("The hidden screen driver isn't running. On the PC open TailPad → Settings → “Repair hidden screen”.");
 
-        // Windows needs a moment to bring a new monitor up
+        // the size to ask for: 720p if Windows offers it, otherwise the closest 16:9 size it does offer
+        var size = (w: Width, h: Height, hz: Hz);
+        if (modes.Count > 0 && !modes.Any(m => m.w == Width && m.h == Height))
+            size = modes.OrderBy(m => Math.Abs(m.w - Width) + Math.Abs(m.h - Height)).ThenByDescending(m => m.hz).First();
+
+        // a few ways of asking, from most exact to "just put it there"; real PCs differ in what they accept
+        var attempts = new (string name, Func<int> run)[]
+        {
+            ("exact", () => Change(f.name, x, y, size.w, size.h, size.hz, 32, twoStep: true)),
+            ("size only", () => Change(f.name, x, y, size.w, size.h, 0, 0, twoStep: true)),
+            ("single step", () => Change(f.name, x, y, size.w, size.h, 0, 0, twoStep: false)),
+            ("position only", () => Change(f.name, x, y, 0, 0, 0, 0, twoStep: true)),
+        };
+        int last = 0;
+        foreach (var (name, run) in attempts)
+        {
+            last = run();
+            Note($"turn on hidden screen ({name}): Windows code {last}");
+            if (last is 0 or 1 && WaitOn() is { } b) return Settle(f.name, x, y, b);
+        }
+
+        // last resort on a laptop with just its own screen: "Extend these displays", then move it into place
+        if (real.Count <= 1)
+        {
+            last = SetDisplayConfig(0, IntPtr.Zero, 0, IntPtr.Zero, SDC_TOPOLOGY_EXTEND | SDC_APPLY);
+            Note($"turn on hidden screen (extend displays): Windows code {last}");
+            if (last == 0 && WaitOn() is { } b) return Settle(f.name, x, y, b);
+        }
+        throw new InvalidOperationException($"Couldn't turn on the hidden screen (Windows code {last}). The Activity tab on the PC has the details.");
+    }
+
+    static int Change(string device, int x, int y, int w, int h, int hz, int bpp, bool twoStep)
+    {
+        var dm = NewDevMode();
+        dm.dmFields = DM_POSITION;
+        dm.dmPositionX = x; dm.dmPositionY = y;
+        if (w > 0) { dm.dmFields |= DM_PELSWIDTH | DM_PELSHEIGHT; dm.dmPelsWidth = w; dm.dmPelsHeight = h; }
+        if (hz > 0) { dm.dmFields |= DM_DISPLAYFREQUENCY; dm.dmDisplayFrequency = hz; }
+        if (bpp > 0) { dm.dmFields |= DM_BITSPERPEL; dm.dmBitsPerPel = bpp; }
+        if (!twoStep) return ChangeDisplaySettingsEx(device, ref dm, IntPtr.Zero, CDS_UPDATEREGISTRY, IntPtr.Zero);
+        int r = ChangeDisplaySettingsEx(device, ref dm, IntPtr.Zero, CDS_UPDATEREGISTRY | CDS_NORESET, IntPtr.Zero);
+        if (r is not (0 or 1)) return r;
+        return ApplyDisplaySettings(null, IntPtr.Zero, IntPtr.Zero, 0, IntPtr.Zero);
+    }
+
+    /// <summary>Windows needs a moment to bring a new monitor up.</summary>
+    static Rectangle? WaitOn()
+    {
         for (int i = 0; i < 40; i++)
         {
-            if (Bounds is { } b && b.Width == Width) return b;
+            if (Bounds is { Width: > 0 } b) return b;
             Thread.Sleep(100);
         }
-        throw new InvalidOperationException("Windows didn't switch the hidden screen on.");
+        return null;
+    }
+
+    /// <summary>Make sure it ended up off the corner (an "extend" or a "position only" may have put it next to the main screen).</summary>
+    static Rectangle Settle(string device, int x, int y, Rectangle b)
+    {
+        var real = RealScreens(device);
+        (x, y) = Placement.HiddenScreenPosition(real, b.Width, b.Height);
+        if (b.X != x || b.Y != y)
+        {
+            Change(device, x, y, 0, 0, 0, 0, twoStep: true);
+            Thread.Sleep(300);
+            b = Bounds ?? b;
+        }
+        Note($"hidden screen on at {b.X},{b.Y} {b.Width}x{b.Height}");
+        return b;
+    }
+
+    /// <summary>Picture sizes Windows offers for the hidden screen.</summary>
+    static List<(int w, int h, int hz)> Modes(string device)
+    {
+        var list = new List<(int, int, int)>();
+        var dm = NewDevMode();
+        for (int i = 0; i < 500 && EnumDisplaySettings(device, i, ref dm); i++)
+            if (!list.Contains((dm.dmPelsWidth, dm.dmPelsHeight, dm.dmDisplayFrequency)))
+                list.Add((dm.dmPelsWidth, dm.dmPelsHeight, dm.dmDisplayFrequency));
+        return list;
+    }
+
+    /// <summary>Is a (virtual) monitor plugged into the hidden-screen adapter? None = the driver isn't running.</summary>
+    static bool HasMonitor(string device)
+    {
+        var dd = new DISPLAY_DEVICE { cb = Marshal.SizeOf<DISPLAY_DEVICE>() };
+        return EnumDisplayDevices(device, 0, ref dd, 0);
     }
 
     /// <summary>Remove the hidden screen from the desktop (windows on it move back to the main screen).</summary>
@@ -171,9 +256,9 @@ static class HiddenScreen
     // ---------------------------------------------------------------- one-time setup (elevated)
 
     /// <summary>Runs TailPad.exe --setup-hidden-screen as administrator. Returns true when the hidden screen is ready.</summary>
-    public static bool SetupWithPrompt()
+    public static bool SetupWithPrompt(bool repair = false)
     {
-        if (Installed) return true;
+        if (Installed && !repair) return true;
         if (!Bundled) throw new InvalidOperationException("This build doesn't include the hidden-screen driver.");
         try
         {
