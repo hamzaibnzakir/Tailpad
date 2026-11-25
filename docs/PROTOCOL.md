@@ -34,6 +34,7 @@ Newline-delimited JSON. Every message has a `t` (type) field.
 | `launch` | `id` | Launch a game from the library |
 | `ping` | `ts` | Latency probe, echoed as `pong` |
 | `stream` | `on`, `height`, `fps`, `kbps`, `audio` | Start/stop remote play of the focused game window |
+| `bg` | `action`: `launch` (`id`) · `move` · `back` · `setup` | Background play: game on the PC's hidden screen |
 | `bye` | – | Clean disconnect |
 
 Macro step: `{"b":<button bits>,"lt":0-1,"rt":0-1,"lx":-1..1,"ly":-1..1,"rx":-1..1,"ry":-1..1,"ms":<hold time>}`.
@@ -49,6 +50,7 @@ An empty step (`{"ms":80}`) is a pause. Macro output is merged on top of what yo
 | `fg` | `exe`, `title` | Game/app in focus on the PC — phone auto-switches layout |
 | `pong` | `ts` | Latency reply |
 | `info` | `msg` | Message to show on the phone |
+| `bg` | `state`: `on` (`game`) · `off` · `waiting` · `needs-setup` · `ready` · `error`, optional `msg` | Background play status |
 | `stream` | `state`: `started` (`w`,`h`,`fps`,`encoder`,`target`) · `stats` (`fps`,`kbps`) · `error` (`msg`) · `stopped` | Remote-play status |
 
 ## Input packet (UDP, little-endian, 68 bytes)

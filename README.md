@@ -153,6 +153,18 @@ Six starting points. Duplicate any of them and make it yours.
 
 The stream follows the window you're playing. If you click into a different game on the PC, the stream moves to it.
 
+### 🫥 Background play: game on the phone, PC free for work
+
+Tap a game in the phone's **Games** tab and choose **Play on my phone, keep using the PC**. TailPad starts it on a **hidden screen** that only your phone sees, so your real screen, mouse and keyboard stay yours. Use the ▭ button at the top of the controller (or the tray menu) to move a game that's already running to the hidden screen, or to bring it back.
+
+- The hidden screen is a 720p virtual monitor that exists only while a game is on it. It touches your desktop only at one corner, so your mouse won't drift onto it.
+- Only the game's sound goes to the phone. On the PC the game is turned down to almost nothing; it can't be fully muted, because Windows mutes an app before its sound can be captured. Your music and calls stay on the PC.
+- While a game is in the background, gyro and touchpad don't move the PC's mouse.
+- The game and your work share the same graphics, CPU and RAM. Light work next to a game is fine.
+
+> [!TIP]
+> Run the game in **windowed** or **borderless** mode at **1280×720**. If a game ignores the controller while you're working, turn on its **"run in background"** / **"pause when unfocused: off"** option. Most games read the Xbox controller fine in the background; some only listen when focused.
+
 ## 🧠 How it works
 
 ```mermaid
@@ -175,6 +187,7 @@ flowchart LR
 - **Private by default.** The PC only answers devices on your tailnet. Each phone pairs once with a 6-digit code, and 5 wrong guesses lock that address out for a minute.
 - **Built for low lag.** Input goes over UDP about 120 times a second. Video is encoded with no B-frames and a keyframe every second, so if a packet is lost the picture recovers within a second instead of breaking up.
 - **Never stuck.** If the phone goes quiet for half a second, every button and stick is released.
+- **Background play.** A signed, open-source virtual display driver ([Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver), MIT) provides the hidden screen. The game's window is moved onto it without taking focus away from you, and only the game's sound is captured, through Windows' per-app loopback.
 - **Works on more PCs.** Screen capture uses the GPU when it can and falls back to a compatible method when it can't. Encoding tries NVIDIA, then Intel, then AMD, then Windows' own encoder, then software.
 
 The full wire format is in **[docs/PROTOCOL.md](docs/PROTOCOL.md)**.
@@ -232,6 +245,7 @@ ios/TailPad         SwiftUI app: pad engine, editor, gyro, stream player, contro
 ## 🙏 Built on
 
 [ViGEmBus](https://github.com/nefarius/ViGEmBus) (virtual controllers) ·
+[Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) (hidden screen) ·
 [FFmpeg](https://ffmpeg.org) (capture and encoding, LGPL build by [BtbN](https://github.com/BtbN/FFmpeg-Builds)) ·
 [NAudio](https://github.com/naudio/NAudio) ·
 [Concentus](https://github.com/lostromb/concentus) (Opus) ·

@@ -104,6 +104,15 @@ struct HUD: View {
                         .frame(width: 30, height: 26)
                 }
                 .disabled(!conn.status.isConnected)
+                if conn.streamState != .off {
+                    // background play: move the PC's game onto the hidden screen, or bring it back
+                    Button { conn.isInBackground ? conn.bringBack() : conn.moveToBackground() } label: {
+                        Image(systemName: conn.isInBackground ? "rectangle.on.rectangle.slash" : "rectangle.on.rectangle")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(conn.isInBackground ? Theme.accent : Theme.text)
+                            .frame(width: 30, height: 26)
+                    }
+                }
                 if settings.showStatus {
                     Circle().fill(dotColor).frame(width: 8, height: 8)
                     Text(statusText).font(.system(size: 11, weight: .medium, design: .rounded)).foregroundColor(Theme.dim)
@@ -155,6 +164,9 @@ struct HUD: View {
             let i = conn.streamInfo
             let ping = conn.pingMs.map { "\($0) ms · " } ?? ""
             let pad = controllers.name.map { " · 🎮 \($0)" } ?? ""
+            if case .on(let game) = conn.background {
+                return "\(ping)\(i.height)p · \(i.fps) fps · \(game) · PC free\(pad)"
+            }
             return "\(ping)\(i.height)p · \(i.fps) fps · \(String(format: "%.1f", Double(i.kbps) / 1000)) Mbps · \(i.encoder)\(pad)"
         }
         switch conn.status {

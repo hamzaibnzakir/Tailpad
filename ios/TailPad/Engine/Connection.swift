@@ -43,6 +43,12 @@ final class Connection: ObservableObject {
     enum StreamState: Equatable { case off, starting, playing, failed(String) }
     @Published private(set) var streamState: StreamState = .off
     @Published private(set) var streamInfo = StreamInfo()
+
+    // background play (game on a hidden screen on the PC)
+    enum BackgroundState: Equatable { case off, waiting(String), on(String), needsSetup }
+    @Published private(set) var background: BackgroundState = .off
+    var onBackgroundOn: (() -> Void)?
+    var isInBackground: Bool { if case .on = background { return true }; return false }
     let streamPlayer = StreamPlayer()
 
     var onForeground: ((String) -> Void)?
@@ -155,6 +161,16 @@ final class Connection: ObservableObject {
     }
     func launch(_ g: PCGame) { queue.async { self.sendJSON(["t": "launch", "id": g.id]) } }
 
+    /// Start a game on the PC's hidden screen (the PC stays free).
+    func launchInBackground(_ g: PCGame) {
+        background = .waiting(g.name)
+        queue.async { self.sendJSON(["t": "bg", "action": "launch", "id": g.id]) }
+    }
+    /// Move the game that's open on the PC to the hidden screen.
+    func moveToBackground() { queue.async { self.sendJSON(["t": "bg", "action": "move"]) } }
+    /// Bring the game back to the PC's own screen.
+    func bringBack() { queue.async { self.sendJSON(["t": "bg", "action": "back"]) } }
+
     /// Screenshot/demo mode: pretend we're connected with sample data.
     func demo() {
         status = .connected
@@ -171,6 +187,8 @@ final class Connection: ObservableObject {
     }
 
     /// Screenshots: pretend a stream is running (the picture comes from a bundled clip).
+    func demoBackground(_ game: String) { background = .on(game) }
+
     func demoStream() {
         streamState = .playing
         streamInfo = StreamInfo(width: 1280, height: 720, fps: 60, kbps: 9_800, encoder: "NVIDIA", target: "GTA5")
@@ -331,6 +349,24 @@ final class Connection: ObservableObject {
                 self.foregroundExe = exe
                 self.foregroundTitle = title
                 self.onForeground?(exe)
+            }
+        case "bg":
+            let st = m["state"] as? String ?? ""
+            let game = m["game"] as? String ?? "Game"
+            let msg = m["msg"] as? String
+            DispatchQueue.main.async {
+                switch st {
+                case "on":
+                    self.background = .on(game)
+                    self.onBackgroundOn?()
+                case "waiting": self.background = .waiting(game)
+                case "needs-setup": self.background = .needsSetup
+                case "off", "ready": self.background = .off
+                case "error":
+                    if case .waiting = self.background { self.background = .off }
+                default: break
+                }
+                if let msg { self.toast = msg }
             }
         case "stream":
             let st = m["state"] as? String ?? ""

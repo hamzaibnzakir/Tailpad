@@ -147,6 +147,7 @@ struct GamesView: View {
     @EnvironmentObject var conn: Connection
     @Environment(\.dismiss) var dismiss
     @State private var search = ""
+    @State private var picked: PCGame?
 
     private var filtered: [PCGame] {
         search.isEmpty ? conn.games : conn.games.filter { $0.name.localizedCaseInsensitiveContains(search) }
@@ -162,16 +163,28 @@ struct GamesView: View {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 200), spacing: 14)], spacing: 14) {
                         ForEach(filtered) { g in
-                            Button {
-                                conn.launch(g)
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { dismiss() }
-                            } label: { GameTile(game: g) }
+                            Button { picked = g } label: { GameTile(game: g) }
                             .buttonStyle(.plain)
                         }
                     }
                     .padding()
                 }
                 .searchable(text: $search)
+                .confirmationDialog(picked?.name ?? "", isPresented: Binding(get: { picked != nil }, set: { if !$0 { picked = nil } }),
+                                    titleVisibility: .visible) {
+                    if let g = picked {
+                        Button("Play on my phone — keep using the PC") {
+                            conn.launchInBackground(g)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { dismiss() }
+                        }
+                        Button("Open on the PC screen") {
+                            conn.launch(g)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { dismiss() }
+                        }
+                    }
+                } message: {
+                    Text("“Play on my phone” runs the game on a hidden screen that only your phone sees.")
+                }
             }
         }
         .navigationTitle("Games on \(conn.pcName.isEmpty ? "PC" : conn.pcName)")

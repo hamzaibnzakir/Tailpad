@@ -34,6 +34,7 @@ final class AppModel: ObservableObject {
 
         connection.onTokenSaved = { [weak self] host, token in self?.settings.setToken(token, for: host) }
         connection.onPCName = { [weak self] name in self?.settings.pcName = name }
+        connection.onBackgroundOn = { [weak self] in self?.streamIfNeeded() }
         connection.onForeground = { [weak self] exe in
             guard let self, self.settings.autoSwitch else { return }
             if let l = self.store.autoSwitch(exe: exe) { self.show("Layout: \(l.name)") }
@@ -63,6 +64,7 @@ final class AppModel: ObservableObject {
             if demo.screen == "stream", let url = Bundle.main.url(forResource: "demo-stream", withExtension: "h264"),
                let clip = try? Data(contentsOf: url) {
                 connection.demoStream()
+                if demo.layout == 0 { connection.demoBackground("Grand Theft Auto V") }
                 connection.streamPlayer.playDemo(clip)
             }
         }
@@ -87,11 +89,20 @@ final class AppModel: ObservableObject {
                            token: settings.token(for: host), code: code, padType: store.active.padType)
     }
 
+    /// Background play needs the picture on the phone — start remote play when a game goes to the hidden screen.
+    private func streamIfNeeded() {
+        guard connection.streamState == .off || { if case .failed = connection.streamState { return true }; return false }() else { return }
+        let (h, f, k) = settings.streamParams
+        connection.startStream(height: h, fps: f, kbps: k, audio: true)
+    }
+
     func toggleStream() {
         if connection.streamState == .off || { if case .failed = connection.streamState { return true }; return false }() {
             let (h, f, k) = settings.streamParams
             connection.startStream(height: h, fps: f, kbps: k, audio: settings.streamAudio)
         } else {
+            // stopping the picture while the game is on the hidden screen would leave it invisible: bring it back
+            if connection.isInBackground { connection.bringBack() }
             connection.stopStream()
         }
     }
