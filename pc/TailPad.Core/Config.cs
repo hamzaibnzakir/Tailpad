@@ -35,6 +35,8 @@ public sealed class Config
     public bool DsuEnabled { get; set; } = true;
     public bool AllowLan { get; set; } = false;
     public bool StartWithWindows { get; set; } = false;
+    /// <summary>Run TailPad as administrator, so it can move games that run as administrator (GTA V, many repacks).</summary>
+    public bool RunAsAdmin { get; set; } = false;
     public bool GyroMouse { get; set; } = true;
     public string PairingCode { get; set; } = NewCode();
     public List<PairedDevice> Devices { get; set; } = new();

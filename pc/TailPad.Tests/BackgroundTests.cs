@@ -59,6 +59,30 @@ public class PlacementTests
     }
 
     [Fact]
+    public void Admin_games_with_unknown_start_time_are_found_by_new_process_id()
+    {
+        var launch = DateTime.Now;
+        // GTA V runs as admin: Windows hides its start time from TailPad
+        var gta = W("GTA5.exe", 1920, 1080, DateTime.MinValue) with { ProcessId = 900 };
+        var chrome = W("chrome.exe", 1920, 1040, DateTime.MinValue) with { ProcessId = 12 };
+        // without the before-launch list an unknown start time doesn't count as new
+        Assert.Null(PickGameWindow(new[] { gta, chrome }, launch));
+        var before = new HashSet<int> { 12 };
+        var pick = PickGameWindow(new[] { chrome, gta }, launch, runningBefore: before);
+        Assert.Equal("GTA5.exe", pick!.Value.Exe);
+        // already running: any window of the game's exe counts
+        Assert.Equal("GTA5.exe", PickGameWindow(new[] { chrome, gta }, null, preferExe: "gta5.exe")!.Value.Exe);
+    }
+
+    [Fact]
+    public void Move_check_spots_a_window_windows_refused_to_move()
+    {
+        var hidden = new Rect(-1280, -720, 1280, 720);
+        Assert.True(LandedOn(new Rect(-1280, -720, 1280, 720), hidden));
+        Assert.False(LandedOn(new Rect(0, 0, 1920, 1080), hidden));
+    }
+
+    [Fact]
     public void Sound_boost_undoes_the_pc_side_volume()
     {
         Assert.Equal(200f, CompensationGain(DuckVolume), 1);

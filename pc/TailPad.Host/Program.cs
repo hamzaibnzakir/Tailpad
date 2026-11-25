@@ -14,7 +14,19 @@ static class Program
             Screenshots.Run(args[1]);
             return;
         }
+        // "Run TailPad as administrator" is on → come back elevated (if the Yes is skipped, carry on as normal)
+        if (!Environment.IsPrivilegedProcess && !args.Contains("--no-elevate"))
+        {
+            bool wantAdmin = false;
+            try { wantAdmin = TailPad.Core.Config.Load().RunAsAdmin; } catch { }
+            if (wantAdmin && Elevation.Relaunch(args)) return;
+        }
         using var mutex = new Mutex(true, @"Local\TailPad.Host", out var first);
+        // after "restart as administrator" the old copy may still be closing
+        if (!first && args.Contains("--restarted"))
+        {
+            try { first = mutex.WaitOne(TimeSpan.FromSeconds(10)); } catch (AbandonedMutexException) { first = true; }
+        }
         if (!first)
         {
             MessageBox.Show("TailPad is already running — look for the gamepad icon in the system tray.", "TailPad",
@@ -24,5 +36,21 @@ static class Program
         ApplicationConfiguration.Initialize();
         var startHidden = args.Contains("--tray");
         Application.Run(new TrayApp(startHidden));
+    }
+}
+
+static class Elevation
+{
+    /// <summary>Start TailPad again as administrator. False if the Windows prompt was declined.</summary>
+    public static bool Relaunch(IEnumerable<string> args)
+    {
+        var keep = args.Where(a => a == "--tray").Append("--restarted");
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!, string.Join(" ", keep))
+            { UseShellExecute = true, Verb = "runas" });
+            return true;
+        }
+        catch (System.ComponentModel.Win32Exception) { return false; } // "No" at the prompt
     }
 }

@@ -24,6 +24,8 @@ sealed class TrayApp : ApplicationContext, IMainHost
         _cfg = Config.Load();
         _services = new WinServices(_cfg, msg => Balloon(msg));
         _bg = _services.EnableBackground();
+        _bg.Log += AddLog;
+        _bg.NeedsAdmin += game => _ui.Post(_ => AskRestartAsAdmin(game), null);
         _server = new HostServer(_cfg, _pads, _services);
         _server.Log += AddLog;
         _server.SessionsChanged += () => _ui.Post(_ => RefreshTray(), null);
@@ -40,6 +42,9 @@ sealed class TrayApp : ApplicationContext, IMainHost
         }
 
         if (!_pads.TryInit()) EnsureDriver(askFirst: true);
+        if (WindowTools.SelfElevated) AddLog("Running as administrator");
+        // move "start with Windows" over to the admin-friendly logon task once we're elevated
+        if (WindowTools.SelfElevated && _cfg.RunAsAdmin && _cfg.StartWithWindows) { try { Autostart.Set(true, true); } catch { } }
         _fg = new ForegroundWatcher((exe, title) => _server.BroadcastForeground(exe, title));
         Task.Run(() =>
         {
@@ -163,6 +168,35 @@ sealed class TrayApp : ApplicationContext, IMainHost
     public static void OpenUrl(string url)
     {
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); } catch { }
+    }
+
+    bool _asking;
+
+    void AskRestartAsAdmin(string game)
+    {
+        if (_asking) return;
+        _asking = true;
+        try
+        {
+            var r = MessageBox.Show(
+                $"{game} runs as administrator, so Windows won't let TailPad move it to the hidden screen.\n\n" +
+                "Restart TailPad as administrator? TailPad will remember this, and your phone reconnects by itself — then tap the game again.",
+                "TailPad — background play", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button1, MessageBoxOptions.DefaultDesktopOnly);
+            if (r == DialogResult.Yes) { _cfg.RunAsAdmin = true; _cfg.Save(); RestartAsAdmin(); }
+        }
+        finally { _asking = false; }
+    }
+
+    public void RestartAsAdmin()
+    {
+        if (WindowTools.SelfElevated) return;
+        if (!Elevation.Relaunch(new[] { "--tray" }))
+        {
+            AddLog("Restart as administrator was cancelled at the Windows prompt");
+            return;
+        }
+        Quit();
     }
 
     void Quit()

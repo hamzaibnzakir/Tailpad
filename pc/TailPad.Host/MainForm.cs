@@ -8,6 +8,7 @@ public interface IMainHost
 {
     IReadOnlyList<string> LogLines { get; }
     bool EnsureDriver(bool askFirst);
+    void RestartAsAdmin();
 }
 
 sealed class MainForm : Form
@@ -192,7 +193,7 @@ sealed class MainForm : Form
         sl.Controls.Add(Check("Start TailPad when Windows starts", _cfg.StartWithWindows, v =>
         {
             _cfg.StartWithWindows = v;
-            try { Autostart.Set(v); } catch (Exception e) { MessageBox.Show(e.Message); }
+            try { Autostart.Set(v, _cfg.RunAsAdmin); } catch (Exception e) { MessageBox.Show(e.Message); }
         }));
         sl.Controls.Add(Check("Let gyro / touchpad move the mouse cursor", _cfg.GyroMouse, v => _cfg.GyroMouse = v));
         sl.Controls.Add(Check("Emulator motion server (DSU on 127.0.0.1:" + _cfg.DsuPort + ") — needs restart", _cfg.DsuEnabled, v => _cfg.DsuEnabled = v));
@@ -206,6 +207,15 @@ sealed class MainForm : Form
         sl.Controls.Add(_hiddenStatus);
         _hiddenSetup = MakeButton("Set up hidden screen", (_, _) => { _bg?.Setup(); });
         sl.Controls.Add(_hiddenSetup);
+        sl.Controls.Add(Check("Run TailPad as administrator (needed for games like GTA V that run as administrator)", _cfg.RunAsAdmin, v =>
+        {
+            _cfg.RunAsAdmin = v;
+            _cfg.Save();
+            if (v && !WindowTools.SelfElevated &&
+                MessageBox.Show("Restart TailPad as administrator now? Your phone reconnects by itself.", "TailPad",
+                    MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                _app.RestartAsAdmin();
+        }));
         RefreshHidden();
         var hiddenTimer = new System.Windows.Forms.Timer { Interval = 2000 };
         hiddenTimer.Tick += (_, _) => RefreshHidden();

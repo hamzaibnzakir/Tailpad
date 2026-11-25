@@ -207,6 +207,12 @@ TailPad starts found games through their desktop or Start Menu shortcut, the sam
 </details>
 
 <details>
+<summary><b>Background play opens the game on my PC screen instead</b></summary>
+<br>
+Some games (GTA V, many repacks) run as administrator, and Windows doesn't let a normal app move an administrator app's window. TailPad spots this and asks to restart itself as administrator. Click <b>Yes</b> and tap the game on your phone again. You can also turn on <b>Settings → Run TailPad as administrator</b>. The <b>Activity</b> log on the PC shows each background-play step if something else gets in the way.
+</details>
+
+<details>
 <summary><b>Do I need to be on the same Wi-Fi?</b></summary>
 <br>
 No, just both on Tailscale. Same Wi-Fi gives the best lag and stream quality. Away from home, run <code>tailscale status</code> on the PC; if the phone shows <code>relay</code> instead of <code>direct</code>, the connection is going through a relay and will be slower.

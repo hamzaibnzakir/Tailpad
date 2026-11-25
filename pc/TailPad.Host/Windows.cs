@@ -10,6 +10,48 @@ static class WindowTools
 {
     delegate bool EnumProc(IntPtr h, IntPtr p);
     [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc cb, IntPtr p);
+    [DllImport("kernel32.dll", SetLastError = true)] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("kernel32.dll")] static extern bool GetProcessTimes(IntPtr p, out long created, out long exited, out long kernel, out long user);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool OpenProcessToken(IntPtr p, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", SetLastError = true)] static extern bool GetTokenInformation(IntPtr token, int cls, out int info, int len, out int ret);
+    const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000, TOKEN_QUERY = 0x0008;
+    const int TokenElevation = 20;
+
+    /// <summary>When a program started. Uses the "limited" query, which also works for programs running as administrator.</summary>
+    public static DateTime StartTimeOf(int pid)
+    {
+        var p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return DateTime.MinValue;
+        try { return GetProcessTimes(p, out var c, out _, out _, out _) ? DateTime.FromFileTime(c) : DateTime.MinValue; }
+        catch { return DateTime.MinValue; }
+        finally { CloseHandle(p); }
+    }
+
+    /// <summary>Every program running right now (taken just before a launch, so the game's new process stands out).</summary>
+    public static HashSet<int> RunningPids()
+    {
+        var set = new HashSet<int>();
+        foreach (var p in Process.GetProcesses()) { set.Add(p.Id); p.Dispose(); }
+        return set;
+    }
+
+    /// <summary>Is TailPad itself running as administrator?</summary>
+    public static bool SelfElevated => Environment.IsPrivilegedProcess;
+
+    /// <summary>Does the program run as administrator? (If Windows won't even let us look, it does.)</summary>
+    public static bool IsElevated(int pid)
+    {
+        var p = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+        if (p == IntPtr.Zero) return !SelfElevated;
+        try
+        {
+            if (!OpenProcessToken(p, TOKEN_QUERY, out var tok)) return !SelfElevated;
+            try { return GetTokenInformation(tok, TokenElevation, out var e, 4, out _) && e != 0; }
+            finally { CloseHandle(tok); }
+        }
+        finally { CloseHandle(p); }
+    }
     [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
     [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
@@ -70,8 +112,7 @@ static class WindowTools
             if (pid == Environment.ProcessId || pid == 0) return true;
             if (!started.TryGetValue(pid, out var info))
             {
-                try { using var p = Process.GetProcessById(pid); info = (p.ProcessName + ".exe", p.StartTime); }
-                catch { info = ("", DateTime.MinValue); }
+                info = (ExeOf(pid), StartTimeOf(pid));
                 started[pid] = info;
             }
             var r = RectOf(h);

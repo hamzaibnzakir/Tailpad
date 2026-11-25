@@ -292,11 +292,31 @@ public static class Autostart
 {
     const string Key = @"Software\Microsoft\Windows\CurrentVersion\Run";
 
-    public static void Set(bool on)
+    const string TaskName = "TailPad";
+
+    /// <summary>
+    /// Start with Windows. As administrator this is a logon task with highest rights (no Windows prompt at
+    /// every sign-in); otherwise the usual Run key.
+    /// </summary>
+    public static void Set(bool on, bool admin = false)
     {
         using var k = Registry.CurrentUser.OpenSubKey(Key, true) ?? Registry.CurrentUser.CreateSubKey(Key);
-        if (on) k.SetValue("TailPad", $"\"{Environment.ProcessPath}\" --tray");
+        bool task = on && admin && Environment.IsPrivilegedProcess
+            && Schtasks($"/Create /F /TN {TaskName} /SC ONLOGON /RL HIGHEST /TR \"\\\"{Environment.ProcessPath}\\\" --tray\"");
+        if (on && !task) k.SetValue("TailPad", $"\"{Environment.ProcessPath}\" --tray");
         else k.DeleteValue("TailPad", false);
+        if ((!on || !task) && Environment.IsPrivilegedProcess) Schtasks($"/Delete /F /TN {TaskName}");
+    }
+
+    static bool Schtasks(string args)
+    {
+        try
+        {
+            using var p = Process.Start(new ProcessStartInfo("schtasks.exe", args) { CreateNoWindow = true, UseShellExecute = false })!;
+            p.WaitForExit(10000);
+            return p.ExitCode == 0;
+        }
+        catch { return false; }
     }
 }
 

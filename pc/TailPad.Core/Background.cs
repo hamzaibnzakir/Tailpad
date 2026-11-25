@@ -58,6 +58,8 @@ public static class BackgroundStatus
     public static JsonObject NeedsSetup() => Make("needs-setup", null,
         "One-time setup: click Yes on your PC to add TailPad's hidden screen.");
     public static JsonObject Error(string msg) => Make("error", null, msg);
+    public static JsonObject NeedsAdmin(string game) => Make("error", game,
+        $"{game} runs as administrator, so Windows won't let TailPad move it. On your PC, click Yes to restart TailPad as administrator, then tap the game again.");
 }
 
 /// <summary>Pure helpers for placing windows and the hidden screen (unit-tested).</summary>
@@ -99,21 +101,37 @@ public static class Placement
 
     /// <summary>
     /// After a launch, pick the game's window among the top-level windows: a visible, normal-sized window
-    /// that isn't a launcher/overlay, preferring processes started after the launch and bigger windows.
+    /// that isn't a launcher/overlay and belongs to a program that wasn't running before the launch,
+    /// preferring the game's own exe and then bigger windows.
+    /// <para><paramref name="launchedAt"/> null = any window counts (the game may already be running).
+    /// <paramref name="runningBefore"/> = process ids that existed before the launch; this works even for
+    /// games running as administrator, whose start time Windows won't tell us (ProcessStarted = MinValue).</para>
     /// </summary>
-    public static WindowInfo? PickGameWindow(IEnumerable<WindowInfo> windows, DateTime launchedAt, string? preferExe = null)
+    public static WindowInfo? PickGameWindow(IEnumerable<WindowInfo> windows, DateTime? launchedAt, string? preferExe = null,
+        IReadOnlySet<int>? runningBefore = null)
     {
+        bool Preferred(WindowInfo w) => preferExe != null && w.Exe.Equals(preferExe, StringComparison.OrdinalIgnoreCase);
+        bool IsNew(WindowInfo w)
+        {
+            if (launchedAt is not { } at) return true;
+            if (runningBefore != null && !runningBefore.Contains(w.ProcessId)) return true;
+            return w.ProcessStarted != DateTime.MinValue && w.ProcessStarted >= at.AddSeconds(-2);
+        }
         var candidates = windows
             .Where(w => w.Visible && !w.ToolWindow && !w.HasOwner && w.Bounds.W >= 640 && w.Bounds.H >= 360)
-            .Where(w => !NotGames.Contains(w.Exe) || (preferExe != null && w.Exe.Equals(preferExe, StringComparison.OrdinalIgnoreCase)))
-            .Where(w => w.ProcessStarted >= launchedAt.AddSeconds(-2))
+            .Where(w => !NotGames.Contains(w.Exe) || Preferred(w))
+            .Where(IsNew)
             .ToList();
         if (candidates.Count == 0) return null;
         return candidates
-            .OrderByDescending(w => preferExe != null && w.Exe.Equals(preferExe, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(Preferred)
             .ThenByDescending(w => (long)w.Bounds.W * w.Bounds.H)
             .First();
     }
+
+    /// <summary>Did the move work? (Windows silently refuses to move windows of programs running as administrator.)</summary>
+    public static bool LandedOn(Rect window, Rect hiddenScreen) =>
+        window.Intersects(hiddenScreen) && window.W > 0 && window.H > 0;
 
     /// <summary>The game is turned almost all the way down on the PC (so the PC is quiet);
     /// this boosts the captured sound back to full for the phone.</summary>

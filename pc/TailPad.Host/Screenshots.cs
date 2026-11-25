@@ -10,6 +10,7 @@ static class Screenshots
 {
     sealed class DemoHost : IMainHost
     {
+        public void RestartAsAdmin() { }
         public IReadOnlyList<string> LogLines { get; } = new[]
         {
             "13:42:07  Listening on TCP 47800 / UDP 47801",

@@ -21,6 +21,10 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
     volatile bool _busy;
 
     public event Action<JsonObject>? Changed;
+    /// <summary>A line for the Activity log on the PC.</summary>
+    public event Action<string>? Log;
+    /// <summary>The game runs as administrator and TailPad doesn't, so Windows blocked the move (arg: game name).</summary>
+    public event Action<string>? NeedsAdmin;
 
     public BackgroundPlay(Config cfg, WinServices services)
     {
@@ -43,7 +47,13 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
     /// <summary>The game's volume on the PC right now (the phone gets it boosted back to full).</summary>
     public float PcVolume => _duck?.Level ?? 1f;
 
-    void Say(JsonObject msg) => Changed?.Invoke(msg);
+    void Say(JsonObject msg)
+    {
+        if (msg["msg"]?.GetValue<string>() is { } m) Note(m);
+        Changed?.Invoke(msg);
+    }
+
+    void Note(string line) { try { Log?.Invoke("Background play: " + line); } catch { } }
 
     public void Setup()
     {
@@ -65,7 +75,7 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
 
     public void Launch(GameEntry game)
     {
-        if (_busy) return;
+        if (_busy) { Note("still busy with the last request"); return; }
         _busy = true;
         Task.Run(async () =>
         {
@@ -75,38 +85,46 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
                 Say(BackgroundStatus.Waiting(game.Name));
                 var userWindow = WindowTools.Foreground();
                 bool userActive = WindowTools.IdleSeconds() < 120; // someone is using the PC right now
-                var started = DateTime.Now;
                 // the game's own exe, even when it's started through a shortcut or launcher
                 var preferExe = game.GameExe is { } ge ? Path.GetFileName(ge) : null;
+                Note($"TailPad {(WindowTools.SelfElevated ? "runs" : "doesn't run")} as administrator; looking for {preferExe ?? "a new game window"}");
 
                 // if the game is already running, just move it
-                var running = Placement.PickGameWindow(WindowTools.All(), new DateTime(2000, 1, 1), preferExe);
+                var running = Placement.PickGameWindow(WindowTools.All(), null, preferExe);
                 if (preferExe != null && running is { } r && r.Exe.Equals(preferExe, StringComparison.OrdinalIgnoreCase))
                 {
-                    Place(r.Handle, game.Name);
+                    Note($"{r.Exe} is already running — moving it");
+                    Place(r.Handle, game.Name, userActive ? userWindow : IntPtr.Zero);
                     return;
                 }
 
+                // everything running now is "not the game", whatever Windows lets us know about it
+                var before = WindowTools.RunningPids();
+                var started = DateTime.Now;
                 _services.Launch(game);
+                Note($"started {game.Name} ({game.StartPath})");
 
                 // wait for the game's own window (launchers and splash screens come and go first)
                 IntPtr candidate = IntPtr.Zero; Rectangle candRect = default; int stable = 0;
                 for (int i = 0; i < 240; i++) // up to 2 minutes
                 {
                     await Task.Delay(500);
-                    var pick = Placement.PickGameWindow(WindowTools.All(), started, preferExe);
+                    var pick = Placement.PickGameWindow(WindowTools.All(), started, preferExe, before);
                     if (pick is not { } w) { stable = 0; continue; }
                     var rect = WindowTools.RectOf(w.Handle);
                     if (w.Handle == candidate && rect == candRect) stable++;
-                    else { candidate = w.Handle; candRect = rect; stable = 0; }
+                    else
+                    {
+                        candidate = w.Handle; candRect = rect; stable = 0;
+                        Note($"found window “{w.Title}” ({w.Exe}, {rect.Width}×{rect.Height})");
+                    }
                     if (stable >= 3) // same window, same size for 1.5 s
                     {
-                        Place(candidate, game.Name);
-                        if (userActive) WindowTools.Focus(userWindow); // give the keyboard back to whatever you were doing
+                        Place(candidate, game.Name, userActive ? userWindow : IntPtr.Zero);
                         return;
                     }
                 }
-                Say(BackgroundStatus.Error($"{game.Name} started, but its window didn't appear. Open it, then tap “Move to hidden screen”."));
+                Say(BackgroundStatus.Error($"{game.Name} started, but TailPad couldn't find its window. When it's open, tap “Move to hidden screen”."));
             }
             catch (Exception e) { Say(BackgroundStatus.Error(e.Message)); }
             finally { _busy = false; }
@@ -126,28 +144,61 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
                 var pid = WindowTools.ProcessOf(h);
                 var name = WindowTools.TitleOf(h);
                 if (string.IsNullOrWhiteSpace(name)) name = Path.GetFileNameWithoutExtension(WindowTools.ExeOf(pid));
-                Place(h, name);
+                Place(h, name, IntPtr.Zero);
             }
             catch (Exception e) { Say(BackgroundStatus.Error(e.Message)); }
             finally { _busy = false; }
         });
     }
 
-    void Place(IntPtr h, string name)
+    /// <summary>Put the window on the hidden screen and check that Windows actually let us.</summary>
+    void Place(IntPtr h, string name, IntPtr giveFocusBackTo)
     {
+        var pid = WindowTools.ProcessOf(h);
+        var exe = WindowTools.ExeOf(pid);
+        // Windows never lets a normal program move an administrator program's window
+        if (!WindowTools.SelfElevated && WindowTools.IsElevated(pid))
+        {
+            Blocked(name, exe);
+            return;
+        }
+
         var area = HiddenScreen.On();
+        var was = WindowTools.RectOf(h);
+        var style = WindowTools.MoveTo(h, area);
+        Thread.Sleep(400);
+        var now = WindowTools.RectOf(h);
+        if (!Placement.LandedOn(new Placement.Rect(now.X, now.Y, now.Width, now.Height),
+                                new Placement.Rect(area.X, area.Y, area.Width, area.Height)))
+        {
+            Note($"{exe} stayed at {now} instead of moving to the hidden screen {area}");
+            WindowTools.Restore(h, was, style);
+            try { HiddenScreen.Off(); } catch { }
+            if (!WindowTools.SelfElevated) { Blocked(name, exe); return; }
+            Say(BackgroundStatus.Error($"{name} wouldn't move to the hidden screen. In the game's settings pick “Windowed” or “Borderless”, then tap “Move to hidden screen”."));
+            return;
+        }
+
         lock (_gate)
         {
-            _was = WindowTools.RectOf(h);
+            _was = was;
             _game = h;
-            GamePid = WindowTools.ProcessOf(h);
+            _style = style;
+            GamePid = pid;
             GameName = name;
         }
-        var style = WindowTools.MoveTo(h, area);
-        lock (_gate) _style = style;
         WindowTools.HideTaskbarsOn(area);
-        try { _duck?.Dispose(); _duck = new GameVolumeDuck(_cfg, GamePid, WindowTools.ExeOf(GamePid)); } catch { _duck = null; }
+        try { _duck?.Dispose(); _duck = new GameVolumeDuck(_cfg, pid, exe); } catch { _duck = null; }
+        if (giveFocusBackTo != IntPtr.Zero) WindowTools.Focus(giveFocusBackTo); // keyboard back to whatever you were doing
+        Note($"{exe} is on the hidden screen {area.Width}×{area.Height}");
         Say(BackgroundStatus.On(name));
+    }
+
+    void Blocked(string name, string exe)
+    {
+        Note($"{exe} runs as administrator and TailPad doesn't — Windows blocks the move");
+        Say(BackgroundStatus.NeedsAdmin(name));
+        NeedsAdmin?.Invoke(name);
     }
 
     public void BringBack() => Task.Run(() => BringBackCore(silent: false));
