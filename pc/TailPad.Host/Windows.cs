@@ -23,7 +23,11 @@ static class WindowTools
     [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
     [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
     [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int attr, out int value, int size);
-    [DllImport("user32.dll")] static extern bool AdjustWindowRectEx(ref RECT r, uint style, bool menu, uint exStyle);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] static extern IntPtr SetWindowLongPtr(IntPtr h, int idx, IntPtr v);
+    [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr h, out RECT r);
+    [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref POINT p);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string? title);
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
     [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
     [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LASTINPUTINFO i);
@@ -31,7 +35,7 @@ static class WindowTools
     [StructLayout(LayoutKind.Sequential)] struct RECT { public int L, T, R, B; }
 
     const int GWL_STYLE = -16, GWL_EXSTYLE = -20, GW_OWNER = 4, DWMWA_CLOAKED = 14;
-    const long WS_EX_TOOLWINDOW = 0x80, WS_CAPTION = 0xC00000;
+    const long WS_EX_TOOLWINDOW = 0x80, WS_CAPTION = 0xC00000, WS_THICKFRAME = 0x40000, WS_SYSMENU = 0x80000, WS_MINIMIZEBOX = 0x20000, WS_MAXIMIZEBOX = 0x10000;
     const uint SWP_NOZORDER = 0x4, SWP_NOACTIVATE = 0x10, SWP_FRAMECHANGED = 0x20, SWP_NOOWNERZORDER = 0x200;
     const int SW_RESTORE = 9, SW_SHOWNOACTIVATE = 4;
 
@@ -85,26 +89,44 @@ static class WindowTools
     }
 
     /// <summary>
-    /// Make the window's picture fill <paramref name="area"/> without activating it: the frame and title bar
-    /// are pushed just outside the area (nothing is there — the hidden screen only touches the desktop at a corner).
+    /// Make the window's picture fill <paramref name="area"/> exactly, without activating it: the window is made
+    /// borderless (no title bar in the stream). Returns the original style so <see cref="Restore"/> can put the frame back.
     /// Games resize their picture to the new size in most cases.
     /// </summary>
-    public static void MoveTo(IntPtr h, Rectangle area)
+    public static long MoveTo(IntPtr h, Rectangle area)
     {
         if (IsZoomed(h) || IsIconic(h)) ShowWindow(h, SW_SHOWNOACTIVATE);
-        uint style = (uint)GetWindowLongPtr(h, GWL_STYLE).ToInt64(), ex = (uint)GetWindowLongPtr(h, GWL_EXSTYLE).ToInt64();
-        var r = new RECT { L = area.Left, T = area.Top, R = area.Right, B = area.Bottom };
-        if ((style & WS_CAPTION) != 0)
-        {
-            var outer = r;
-            AdjustWindowRectEx(ref outer, style, false, ex);
-            // push the frame just outside the hidden screen — unless that would poke onto a real screen,
-            // in which case keep the whole window inside (title bar shows in the stream, but your screen stays clean)
-            var o = new Placement.Rect(outer.L, outer.T, outer.R - outer.L, outer.B - outer.T);
-            if (!HiddenScreen.RealScreens().Any(s => s.Intersects(o))) r = outer;
-        }
+        long style = GetWindowLongPtr(h, GWL_STYLE).ToInt64();
+        long borderless = style & ~(WS_CAPTION | WS_THICKFRAME | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX);
+        if (borderless != style) SetWindowLongPtr(h, GWL_STYLE, new IntPtr(borderless));
         // top of the hidden screen's stack, without activating it (it can't cover anything on your real screen)
-        SetWindowPos(h, IntPtr.Zero /* HWND_TOP */, r.L, r.T, r.R - r.L, r.B - r.T, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        SetWindowPos(h, IntPtr.Zero /* HWND_TOP */, area.X, area.Y, area.Width, area.Height, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        return style;
+    }
+
+    /// <summary>The window's picture (client area) in screen coordinates.</summary>
+    public static Rectangle ClientOnScreen(IntPtr h)
+    {
+        if (!GetClientRect(h, out var r)) return Rectangle.Empty;
+        var p = new POINT();
+        ClientToScreen(h, ref p);
+        return new Rectangle(p.X, p.Y, r.R - r.L, r.B - r.T);
+    }
+
+    /// <summary>Windows puts a taskbar on every screen; hide the one on the hidden screen so it's not in the game.</summary>
+    public static void HideTaskbarsOn(Rectangle area)
+    {
+        IntPtr h = IntPtr.Zero;
+        while ((h = FindWindowEx(IntPtr.Zero, h, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero)
+            if (IsWindowVisible(h) && RectOf(h).IntersectsWith(area)) ShowWindow(h, 0 /* SW_HIDE */);
+    }
+
+    public static bool TaskbarVisibleOn(Rectangle area)
+    {
+        IntPtr h = IntPtr.Zero;
+        while ((h = FindWindowEx(IntPtr.Zero, h, "Shell_SecondaryTrayWnd", null)) != IntPtr.Zero)
+            if (IsWindowVisible(h) && RectOf(h).IntersectsWith(area)) return true;
+        return false;
     }
 
     /// <summary>Seconds since the person last used the PC's own keyboard or mouse.</summary>
@@ -125,9 +147,10 @@ static class WindowTools
     }
 
     /// <summary>Put a window back where it was before, without stealing focus from what the user is doing.</summary>
-    public static void Restore(IntPtr h, Rectangle was)
+    public static void Restore(IntPtr h, Rectangle was, long style = 0)
     {
+        if (style != 0) SetWindowLongPtr(h, GWL_STYLE, new IntPtr(style));
         if (IsZoomed(h)) ShowWindow(h, SW_RESTORE);
-        SetWindowPos(h, IntPtr.Zero, was.X, was.Y, was.Width, was.Height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+        SetWindowPos(h, IntPtr.Zero, was.X, was.Y, was.Width, was.Height, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     }
 }

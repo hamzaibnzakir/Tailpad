@@ -15,6 +15,7 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
     readonly System.Threading.Timer _tick;
     IntPtr _game;
     Rectangle _was;
+    long _style;
     GameVolumeDuck? _duck;
     IntPtr _lastFocusedGame;
     volatile bool _busy;
@@ -142,7 +143,9 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
             GamePid = WindowTools.ProcessOf(h);
             GameName = name;
         }
-        WindowTools.MoveTo(h, area);
+        var style = WindowTools.MoveTo(h, area);
+        lock (_gate) _style = style;
+        WindowTools.HideTaskbarsOn(area);
         try { _duck?.Dispose(); _duck = new GameVolumeDuck(_cfg, GamePid, WindowTools.ExeOf(GamePid)); } catch { _duck = null; }
         Say(BackgroundStatus.On(name));
     }
@@ -151,8 +154,8 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
 
     void BringBackCore(bool silent)
     {
-        IntPtr h; Rectangle was;
-        lock (_gate) { h = _game; was = _was; _game = IntPtr.Zero; GameName = null; GamePid = 0; }
+        IntPtr h; Rectangle was; long style;
+        lock (_gate) { h = _game; was = _was; style = _style; _game = IntPtr.Zero; GameName = null; GamePid = 0; }
         try { _duck?.Dispose(); } catch { }
         _duck = null;
         if (WindowTools.Exists(h))
@@ -160,7 +163,7 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
             // back to where it was, or centred on the main screen if that place is gone
             var primary = HiddenScreen.Primary;
             if (was.IsEmpty || !primary.IntersectsWith(was)) was = new Rectangle(primary.X + primary.Width / 8, primary.Y + primary.Height / 8, primary.Width * 3 / 4, primary.Height * 3 / 4);
-            WindowTools.Restore(h, was);
+            WindowTools.Restore(h, was, style); // frame and title bar come back
         }
         try { HiddenScreen.Off(); } catch { }
         if (!silent) Say(BackgroundStatus.Off());
@@ -171,6 +174,9 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
         // remember the last real game/app window the person focused (for "move to hidden screen")
         var fg = WindowTools.Foreground();
         if (fg != IntPtr.Zero && CaptureTarget.FromWindow(fg) != null && fg != _game) _lastFocusedGame = fg;
+
+        // keep the hidden screen clean: Windows re-shows its taskbar now and then
+        if (Active && HiddenScreen.Bounds is { } hs) WindowTools.HideTaskbarsOn(hs);
 
         // the game was closed → tidy up
         bool ended;

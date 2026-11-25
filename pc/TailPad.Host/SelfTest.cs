@@ -50,13 +50,19 @@ static class SelfTest
             if (game == null) return Finish(false);
             var h = game.Value.Handle;
             var before = WindowTools.RectOf(h);
-            WindowTools.MoveTo(h, area);
-            Thread.Sleep(800);
+            var style = WindowTools.MoveTo(h, area);
+            Thread.Sleep(1500); // Windows adds the taskbar to a new screen after a moment
+            WindowTools.HideTaskbarsOn(area);
+            Thread.Sleep(500);
             var after = WindowTools.RectOf(h);
             L($"Window before: {before}  after: {after}");
             var overlap = Rectangle.Intersect(after, area);
             ok &= Check(overlap.Width * overlap.Height >= area.Width * area.Height * 0.95, "game window fills the hidden screen");
             ok &= Check(!after.IntersectsWith(primary), "nothing of the game is left on the real screen");
+            var client = WindowTools.ClientOnScreen(h);
+            L($"Game picture: {client}");
+            ok &= Check(client == area, "game picture is exactly the hidden screen (no title bar)");
+            ok &= Check(!WindowTools.TaskbarVisibleOn(area), "no taskbar on the hidden screen");
 
             // capture exactly what the phone would get
             var ff = VideoEngine.Path();
@@ -83,7 +89,9 @@ static class SelfTest
             }
             ok &= Check(frames >= 20, "streamed the hidden screen");
 
-            WindowTools.Restore(h, before);
+            WindowTools.Restore(h, before, style);
+            Thread.Sleep(300);
+            ok &= Check(WindowTools.RectOf(h) == before, "game comes back to its old place with its frame");
             HiddenScreen.Off();
             Thread.Sleep(1000);
             ok &= Check(HiddenScreen.Bounds == null, "hidden screen removed afterwards");
