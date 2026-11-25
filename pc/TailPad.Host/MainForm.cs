@@ -28,7 +28,7 @@ sealed class MainForm : Form
     Button _driverButton = null!;
     readonly ListView _live = MakeList(("Phone", 170), ("Controller", 110), ("Player", 60), ("Address", 140));
     readonly ListView _paired = MakeList(("Phone", 220), ("Last seen", 160));
-    readonly ListView _games = MakeList(("Game", 300), ("From", 90));
+    readonly ListView _games = MakeList(("Game", 260), ("From", 90), ("Starts with", 200));
     readonly TextBox _log = new() { Multiline = true, ReadOnly = true, ScrollBars = ScrollBars.Vertical, Dock = DockStyle.Fill, BackColor = Panel, ForeColor = Fg, BorderStyle = BorderStyle.None, Font = new Font("Consolas", 9) };
     bool _quitting;
     readonly BackgroundPlay? _bg;
@@ -176,6 +176,7 @@ sealed class MainForm : Form
         _scanButton = MakeButton("Scan PC for games", (_, _) => StartScan());
         grow.Controls.Add(_scanButton);
         grow.Controls.Add(MakeButton("Add game…", (_, _) => AddGame()));
+        grow.Controls.Add(MakeButton("Change start file…", (_, _) => ChangeStartFile()));
         grow.Controls.Add(MakeButton("Remove", (_, _) => RemoveGame()));
         _unhide = MakeButton("Show removed", (_, _) => { _services.UnhideAll(); RefreshGames(); });
         grow.Controls.Add(_unhide);
@@ -301,7 +302,7 @@ sealed class MainForm : Form
         _games.BeginUpdate();
         _games.Items.Clear();
         foreach (var g in _services.Games())
-            _games.Items.Add(new ListViewItem(new[] { g.Name, g.Source == "PC" ? "On this PC" : g.Source }) { Tag = g });
+            _games.Items.Add(new ListViewItem(new[] { g.Name, g.Source == "PC" ? "On this PC" : g.Source, Path.GetFileName(g.StartPath) }) { Tag = g });
         _games.EndUpdate();
         int hidden;
         lock (_cfg) hidden = _cfg.HiddenGames.Count;
@@ -335,6 +336,27 @@ sealed class MainForm : Form
         lock (_cfg) { _cfg.CustomGames.Add(new CustomGame { Name = name, Path = dlg.FileName }); _cfg.Save(); }
         _services.Rescan();
         RefreshGames();
+    }
+
+    /// <summary>Some games must start through their launcher or a shortcut — pick the file you'd double-click.</summary>
+    void ChangeStartFile()
+    {
+        if (_games.SelectedItems.Count != 1 || _games.SelectedItems[0].Tag is not GameEntry g)
+        {
+            MessageBox.Show("Select a game first.", "TailPad");
+            return;
+        }
+        using var dlg = new OpenFileDialog
+        {
+            Title = $"How do you start {g.Name}? Pick its shortcut or launcher",
+            Filter = "Programs and shortcuts (*.exe;*.lnk;*.url;*.bat)|*.exe;*.lnk;*.url;*.bat|All files|*.*",
+            InitialDirectory = g.GameExe is { } exe && File.Exists(exe) ? Path.GetDirectoryName(exe) : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
+            DereferenceLinks = false, // keep the shortcut itself (it carries the launcher's arguments)
+        };
+        if (dlg.ShowDialog(this) != DialogResult.OK) return;
+        _services.SetStartFile(g, dlg.FileName);
+        RefreshGames();
+        AppendLog($"{DateTime.Now:HH:mm:ss}  {g.Name} will start with {Path.GetFileName(dlg.FileName)}");
     }
 
     void RemoveGame()

@@ -16,7 +16,7 @@ public static partial class GameLibrary
         { "Steamworks Common Redistributables", "Steam Linux Runtime", "Proton", "SteamVR", "Steam Controller Configs" };
 
     public static List<GameEntry> Scan(string? steamRoot, string? epicManifests, IEnumerable<CustomGame> custom,
-        IEnumerable<ScannedGame>? scanned = null, ICollection<string>? hidden = null)
+        IEnumerable<ScannedGame>? scanned = null, ICollection<string>? hidden = null, IReadOnlyDictionary<string, string>? overrides = null)
     {
         var games = new List<GameEntry>();
         try { if (steamRoot != null) games.AddRange(Steam(steamRoot)); } catch { }
@@ -31,8 +31,15 @@ public static partial class GameLibrary
         foreach (var g in scanned ?? Enumerable.Empty<ScannedGame>())
         {
             if (string.IsNullOrWhiteSpace(g.Path) || manual.Contains(g.Path)) continue;
-            games.Add(new GameEntry("scan:" + StableId(g.Path), g.Name, "PC", null, g.Path + "\u0000"));
+            // start it the way you do (its shortcut) when we know it, but remember the real exe for its window
+            var start = string.IsNullOrWhiteSpace(g.Launch) ? g.Path : g.Launch;
+            games.Add(new GameEntry("scan:" + StableId(g.Path), g.Name, "PC", null, start + "\u0000\u0000" + g.Path));
         }
+        // "Change start file…" in the PC app wins over everything
+        if (overrides is { Count: > 0 })
+            for (int i = 0; i < games.Count; i++)
+                if (overrides.TryGetValue(games[i].Id, out var ov) && !string.IsNullOrWhiteSpace(ov))
+                    games[i] = games[i] with { Target = ov + "\u0000\u0000" + (games[i].GameExe ?? "") };
         // same name from two places (e.g. Steam + a scan) → keep the launcher version
         return games
             .Where(g => hidden == null || !hidden.Contains(g.Id))

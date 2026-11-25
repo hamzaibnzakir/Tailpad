@@ -201,6 +201,12 @@ Yes. To Windows, TailPad is just a controller, so any game that supports a contr
 </details>
 
 <details>
+<summary><b>A game says to start it through its launcher (e.g. GTA V: "ERR_NO_LAUNCHER")</b></summary>
+<br>
+TailPad starts found games through their desktop or Start Menu shortcut, the same way a double-click does. If a game still won't start, open TailPad on the PC, go to <b>Games</b>, select the game, click <b>Change start file…</b> and pick the shortcut or launcher you normally use.
+</details>
+
+<details>
 <summary><b>Do I need to be on the same Wi-Fi?</b></summary>
 <br>
 No, just both on Tailscale. Same Wi-Fi gives the best lag and stream quality. Away from home, run <code>tailscale status</code> on the PC; if the phone shows <code>relay</code> instead of <code>direct</code>, the connection is going through a relay and will be slower.

@@ -91,3 +91,45 @@ public class ScannerTests
         Assert.Equal("PC", games[1].Source);
     }
 }
+
+public class ShortcutTests
+{
+    const string Gta = @"D:\Games\Grand Theft Auto V";
+
+    [Fact]
+    public void Prefers_the_games_own_shortcut_over_its_exe_and_skips_uninstall()
+    {
+        var links = new[]
+        {
+            new Shortcuts.Link(@"C:\Users\h\Desktop\Uninstall GTA V.lnk", Gta + @"\unins000.exe", ""),
+            new Shortcuts.Link(@"C:\Users\h\Desktop\Grand Theft Auto V.lnk", Gta + @"\PlayGTAV.exe", ""),
+            new Shortcuts.Link(@"C:\Users\h\Desktop\Chrome.lnk", @"C:\Program Files\Google\Chrome\chrome.exe", ""),
+        };
+        Assert.Equal(@"C:\Users\h\Desktop\Grand Theft Auto V.lnk", Shortcuts.Choose(Gta, "Grand Theft Auto V", links)!.Value.Path);
+    }
+
+    [Fact]
+    public void Accepts_a_launcher_shortcut_only_when_the_name_matches()
+    {
+        var viaLauncher = new Shortcuts.Link(@"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\Rockstar Games\Grand Theft Auto V.lnk",
+            @"C:\Program Files\Rockstar Games\Launcher\LauncherPatcher.exe", "-launchTitleInFolder");
+        var other = new Shortcuts.Link(@"C:\Users\h\Desktop\Discord.lnk", @"C:\Users\h\AppData\Local\Discord\Update.exe", "");
+        Assert.Equal(viaLauncher, Shortcuts.Choose(Gta, "Grand Theft Auto V", new[] { viaLauncher, other }));
+        Assert.Null(Shortcuts.Choose(Gta, "Grand Theft Auto V", new[] { other }));
+    }
+
+    [Fact]
+    public void Scanned_games_start_through_their_shortcut_but_remember_the_game_exe()
+    {
+        var scanned = new[] { new ScannedGame { Name = "Grand Theft Auto V", Path = Gta + @"\GTA5.exe", Launch = @"C:\Users\h\Desktop\Grand Theft Auto V.lnk" } };
+        var g = GameLibrary.Scan(null, null, Array.Empty<CustomGame>(), scanned).Single();
+        Assert.Equal(@"C:\Users\h\Desktop\Grand Theft Auto V.lnk", g.StartPath);
+        Assert.Equal(Gta + @"\GTA5.exe", g.GameExe);
+
+        // "Change start file…" wins, and the game exe is still known
+        var ov = new Dictionary<string, string> { [g.Id] = @"D:\Games\Grand Theft Auto V\PlayGTAV.exe" };
+        var g2 = GameLibrary.Scan(null, null, Array.Empty<CustomGame>(), scanned, null, ov).Single();
+        Assert.Equal(@"D:\Games\Grand Theft Auto V\PlayGTAV.exe", g2.StartPath);
+        Assert.Equal(Gta + @"\GTA5.exe", g2.GameExe);
+    }
+}

@@ -76,8 +76,8 @@ sealed class BackgroundPlay : IBackgroundPlay, IDisposable
                 var userWindow = WindowTools.Foreground();
                 bool userActive = WindowTools.IdleSeconds() < 120; // someone is using the PC right now
                 var started = DateTime.Now;
-                var preferExe = Path.GetFileName(game.Target.Split('\0')[0]);
-                if (!preferExe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) preferExe = null;
+                // the game's own exe, even when it's started through a shortcut or launcher
+                var preferExe = game.GameExe is { } ge ? Path.GetFileName(ge) : null;
 
                 // if the game is already running, just move it
                 var running = Placement.PickGameWindow(WindowTools.All(), new DateTime(2000, 1, 1), preferExe);

@@ -44,18 +44,53 @@ public sealed class WinServices : IHostServices
     {
         lock (_gate)
         {
-            List<CustomGame> custom; List<ScannedGame> scanned; HashSet<string> hidden;
+            FindShortcuts();
+            List<CustomGame> custom; List<ScannedGame> scanned; HashSet<string> hidden; Dictionary<string, string> overrides;
             lock (_cfg)
             {
                 custom = _cfg.CustomGames.ToList();
                 scanned = _cfg.ScannedGames.ToList();
                 hidden = new HashSet<string>(_cfg.HiddenGames);
+                overrides = new Dictionary<string, string>(_cfg.LaunchOverrides);
             }
-            _games = GameLibrary.Scan(SteamRoot(), EpicManifests(), custom, scanned, hidden)
-                .Select(g => g.Art == null && g.Source == "PC" ? g with { Art = IconFor(g.Target.Split('\0')[0]) } : g)
+            _games = GameLibrary.Scan(SteamRoot(), EpicManifests(), custom, scanned, hidden, overrides)
+                .Select(g => g.Art == null && g.Source == "PC" ? g with { Art = IconFor(g.GameExe ?? g.StartPath) } : g)
                 .ToList();
             _scanned = DateTime.UtcNow;
         }
+    }
+
+    /// <summary>Start found games the way you do: through their desktop / Start Menu shortcut when there is one.</summary>
+    void FindShortcuts()
+    {
+        List<ScannedGame> todo;
+        lock (_cfg) todo = _cfg.ScannedGames.Where(g => g.Launch == null).ToList();
+        if (todo.Count == 0) return;
+        List<Shortcuts.Link> links;
+        try { links = ShortcutReader.All(); } catch { return; }
+        lock (_cfg)
+        {
+            foreach (var g in todo)
+            {
+                var folder = Path.GetDirectoryName(g.Path) ?? "";
+                g.Launch = Shortcuts.Choose(folder, g.Name, links)?.Path ?? ""; // "" = looked, none found
+            }
+            _cfg.Save();
+        }
+    }
+
+    static List<Shortcuts.Link> SafeShortcuts() { try { return ShortcutReader.All(); } catch { return new(); } }
+
+    /// <summary>"Change start file…": start this game with a file you pick (its launcher, a shortcut, …).</summary>
+    public void SetStartFile(GameEntry g, string? path)
+    {
+        lock (_cfg)
+        {
+            if (string.IsNullOrWhiteSpace(path)) _cfg.LaunchOverrides.Remove(g.Id);
+            else _cfg.LaunchOverrides[g.Id] = path;
+            _cfg.Save();
+        }
+        Rescan();
     }
 
     // ---- whole-PC game scan ----
@@ -86,7 +121,12 @@ public sealed class WinServices : IHostServices
 
             lock (_cfg)
             {
-                _cfg.ScannedGames = found.Select(f => new ScannedGame { Name = f.Name, Path = f.Exe }).ToList();
+                var links = SafeShortcuts();
+                _cfg.ScannedGames = found.Select(f => new ScannedGame
+                {
+                    Name = f.Name, Path = f.Exe,
+                    Launch = Shortcuts.Choose(f.Folder, f.Name, links)?.Path ?? "",
+                }).ToList();
                 _cfg.LastScan = DateTime.Now;
                 _cfg.Save();
             }
@@ -193,10 +233,11 @@ public sealed class WinServices : IHostServices
 
     public void Launch(GameEntry game)
     {
-        var parts = game.Target.Split('\0');
-        var psi = new ProcessStartInfo(parts[0]) { UseShellExecute = true };
-        if (parts.Length > 1 && parts[1].Length > 0) psi.Arguments = parts[1];
-        if (game.Source == "PC" && File.Exists(parts[0])) psi.WorkingDirectory = Path.GetDirectoryName(parts[0]);
+        // shortcuts (.lnk/.url) carry their own target, arguments and start folder; Windows opens them like a double-click
+        var start = game.StartPath;
+        var psi = new ProcessStartInfo(start) { UseShellExecute = true };
+        if (game.StartArgs.Length > 0) psi.Arguments = game.StartArgs;
+        if (start.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && File.Exists(start)) psi.WorkingDirectory = Path.GetDirectoryName(start);
         Process.Start(psi);
     }
 

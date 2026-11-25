@@ -21,7 +21,10 @@ public sealed class CustomGame
 public sealed class ScannedGame
 {
     public string Name { get; set; } = "";
+    /// <summary>the game's own .exe (what its window belongs to)</summary>
     public string Path { get; set; } = "";
+    /// <summary>how you normally start it — its desktop/Start Menu shortcut — if one was found</summary>
+    public string? Launch { get; set; }
 }
 
 public sealed class Config
@@ -41,6 +44,8 @@ public sealed class Config
     public DateTime LastScan { get; set; }
     /// <summary>game ids the user removed from the list</summary>
     public List<string> HiddenGames { get; set; } = new();
+    /// <summary>game id → file to start it with, chosen in the PC app ("Change start file…")</summary>
+    public Dictionary<string, string> LaunchOverrides { get; set; } = new();
     /// <summary>games TailPad turned down on the PC during background play (restored on exit / after a crash)</summary>
     public List<string> DuckedApps { get; set; } = new();
 
