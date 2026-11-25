@@ -94,8 +94,17 @@ static class WindowTools
         if (IsZoomed(h) || IsIconic(h)) ShowWindow(h, SW_SHOWNOACTIVATE);
         uint style = (uint)GetWindowLongPtr(h, GWL_STYLE).ToInt64(), ex = (uint)GetWindowLongPtr(h, GWL_EXSTYLE).ToInt64();
         var r = new RECT { L = area.Left, T = area.Top, R = area.Right, B = area.Bottom };
-        if ((style & WS_CAPTION) != 0) AdjustWindowRectEx(ref r, style, false, ex);
-        SetWindowPos(h, IntPtr.Zero, r.L, r.T, r.R - r.L, r.B - r.T, SWP_NOZORDER | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+        if ((style & WS_CAPTION) != 0)
+        {
+            var outer = r;
+            AdjustWindowRectEx(ref outer, style, false, ex);
+            // push the frame just outside the hidden screen — unless that would poke onto a real screen,
+            // in which case keep the whole window inside (title bar shows in the stream, but your screen stays clean)
+            var o = new Placement.Rect(outer.L, outer.T, outer.R - outer.L, outer.B - outer.T);
+            if (!HiddenScreen.RealScreens().Any(s => s.Intersects(o))) r = outer;
+        }
+        // top of the hidden screen's stack, without activating it (it can't cover anything on your real screen)
+        SetWindowPos(h, IntPtr.Zero /* HWND_TOP */, r.L, r.T, r.R - r.L, r.B - r.T, SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
     }
 
     /// <summary>Seconds since the person last used the PC's own keyboard or mouse.</summary>

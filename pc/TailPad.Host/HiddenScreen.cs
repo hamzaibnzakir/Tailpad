@@ -98,10 +98,12 @@ static class HiddenScreen
     public static Rectangle On()
     {
         var f = Find() ?? throw new InvalidOperationException("The hidden screen isn't set up yet.");
-        if (f.attached && Bounds is { } existing) return existing;
-
         var real = RealScreens(f.name);
         var (x, y) = Placement.HiddenScreenPosition(real, Width, Height);
+        // already on, in the right place and size → nothing to do (Windows may have switched it on next to
+        // the main screen when the driver was installed, so check the position, not just "on")
+        if (f.attached && Bounds is { } existing && existing.X == x && existing.Y == y && existing.Width == Width && existing.Height == Height)
+            return existing;
 
         var dm = NewDevMode();
         EnumDisplaySettings(f.name, ENUM_REGISTRY_SETTINGS, ref dm);
@@ -115,7 +117,7 @@ static class HiddenScreen
         // Windows needs a moment to bring a new monitor up
         for (int i = 0; i < 40; i++)
         {
-            if (Bounds is { } b) return b;
+            if (Bounds is { } b && b.Width == Width) return b;
             Thread.Sleep(100);
         }
         throw new InvalidOperationException("Windows didn't switch the hidden screen on.");
@@ -134,6 +136,8 @@ static class HiddenScreen
     }
 
     /// <summary>Every attached monitor except the hidden one, read fresh from Windows.</summary>
+    public static List<Placement.Rect> RealScreens() => RealScreens(Find()?.name);
+
     static List<Placement.Rect> RealScreens(string? exceptName)
     {
         var list = new List<Placement.Rect>();
